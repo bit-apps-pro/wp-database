@@ -434,9 +434,13 @@ class Blueprint
         return $this;
     }
 
-    public function unique()
+    public function unique($column = null)
     {
-        $this->uniqueIndex[] = $this->columns[$this->columnIndex]['name'];
+        if (\is_null($column)) {
+            $this->uniqueIndex[] = $this->columns[$this->columnIndex]['name'];
+        } else {
+            $this->uniqueIndex[] = $column;
+        }
 
         return $this;
     }
@@ -753,7 +757,11 @@ class Blueprint
 
         $query = '';
         foreach ($this->uniqueIndex as $key => $uniqueColumn) {
-            $query .= "\nUNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
+            if (\is_array($uniqueColumn)) {
+                $query .= "\nUNIQUE INDEX " . implode('_', $uniqueColumn) . '_UNIQUE (' . implode(',', $uniqueColumn) . '),';
+            } else {
+                $query .= "\nUNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
+            }
         }
 
         return $query;
@@ -767,14 +775,6 @@ class Blueprint
 
         $query = '';
         foreach ($this->foreignKeys as $fkId => $foreignKey) {
-            /* $query .= "\nCONSTRAINT f_c_{$this->table}_{$fkId} "
-                ." FOREIGN KEY f_key_{$this->table}_{$fkId} ({$foreignKey['column']})"
-                ." REFERENCES {$foreignKey['ref']} ({$foreignKey['ref_col']})"
-                . (isset($foreignKey['onUpdate']) ? " ON DELETE {$foreignKey['onUpdate']}" : null)
-                . (isset($foreignKey['onUpdate']) ? " ON UPDATE {$foreignKey['onUpdate']}" : null)
-                . (isset($foreignKey['both']) ? " ON DELETE {$foreignKey['both']} ON UPDATE {$foreignKey['both']}" : null)
-                . ","; */
-
             $query .= " FOREIGN KEY ({$foreignKey['column']}) REFERENCES {$foreignKey['ref']} ";
             $query .= "({$foreignKey['ref_col']})";
             $query .= (isset($foreignKey['onDelete']) ? " ON DELETE {$foreignKey['onDelete']}" : null);
