@@ -764,7 +764,7 @@ class Blueprint
             }
         }
 
-        return $query;
+        return rtrim($query, ',');
     }
 
     private function addForeignKeyQuery()
