@@ -466,11 +466,11 @@ class QueryBuilder
     {
         $selectedColumns = empty($this->select) ? ['*'] : $this->select;
 
-        $totalItems = (int) $this->count(); 
+        $totalItems = (int) $this->count();
 
         $offset = ($pageNo > 1) ? ($pageNo * $perPage) - $perPage : 0;
-                
-        $data =  $this->take($perPage)->skip($offset)->get($selectedColumns);
+
+        $data = $this->take($perPage)->skip($offset)->get($selectedColumns);
 
         $pages = ceil($totalItems / $perPage);
 
@@ -666,7 +666,14 @@ class QueryBuilder
         }
 
         foreach ($this->orderBy as $order) {
-            $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
+            if (isset($order['raw'])) {
+                $sql .= $order['raw'] . ' ' . $order['direction'] . ', ';
+                $this->addBindings($order['bindings']);
+
+                continue;
+            } elseif (isset($order['column'])) {
+                $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
+            }
         }
 
         return ' ORDER BY ' . rtrim($sql, ', ');
@@ -684,6 +691,25 @@ class QueryBuilder
         $this->orderBy[] = [
             'column'    => $column,
             'direction' => 'ASC',
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Sets order by raw query
+     *
+     * @param string $query
+     * @param array  $bindings
+     *
+     * @return $this
+     */
+    public function orderByRaw($query, $bindings = [])
+    {
+        $this->orderBy[] = [
+            'raw'       => $query,
+            'direction' => 'ASC',
+            'bindings'  => $bindings,
         ];
 
         return $this;
@@ -994,7 +1020,6 @@ class QueryBuilder
         return empty($this->bindings)
          || strpos($sql, '%') === false
          ? $sql : Connection::prepare($sql, $this->bindings);
-
     }
 
     /**
@@ -1306,11 +1331,9 @@ class QueryBuilder
                     ', ',
                     array_map(
                         function ($value) {
-
                             if (\is_null($value)) {
                                 return 'NULL';
                             }
-
 
                             $this->bindings[] = $value;
 
@@ -1454,9 +1477,9 @@ class QueryBuilder
                 $this->bindings[] = \is_array($this->_model->{$column})
                 || \is_object($this->_model->{$column})
                 ? wp_json_encode($this->_model->{$column}) : $this->_model->{$column};
-            }  elseif (\is_null($this->_model->{$column})) {
+            } elseif (\is_null($this->_model->{$column})) {
                 $this->bindings[] = null;
-            }else {
+            } else {
                 $this->bindings[] = '';
             }
         }
