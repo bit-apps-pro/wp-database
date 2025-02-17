@@ -667,10 +667,8 @@ class QueryBuilder
 
         foreach ($this->orderBy as $order) {
             if (isset($order['raw'])) {
-                $sql .= $order['raw'] . ' ' . $order['direction'] . ', ';
+                $sql .= $order['raw'] . ', ';
                 $this->addBindings($order['bindings']);
-
-                continue;
             } elseif (isset($order['column'])) {
                 $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
             }
@@ -707,9 +705,8 @@ class QueryBuilder
     public function orderByRaw($query, $bindings = [])
     {
         $this->orderBy[] = [
-            'raw'       => $query,
-            'direction' => 'ASC',
-            'bindings'  => $bindings,
+            'raw'      => $query,
+            'bindings' => $bindings,
         ];
 
         return $this;
