@@ -112,7 +112,7 @@ class QueryBuilder
      *
      * @param string $_for
      *
-     * @return void
+     * @return self
      */
     public function queryFor($_for)
     {
@@ -1601,6 +1601,8 @@ class QueryBuilder
         if (\is_null($sql)) {
             throw new Exception('SQL query is null');
         }
+
+        $this->bindings = [];
 
         Connection::query($sql);
 
