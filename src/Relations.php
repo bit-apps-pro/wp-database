@@ -6,6 +6,8 @@
 
 namespace BitApps\WPDatabase;
 
+use Closure;
+
 if (!\defined('ABSPATH')) {
     exit;
 }
@@ -120,6 +122,25 @@ trait Relations
     public function getRelationalKeys()
     {
         return $this->_relationKeys;
+    }
+
+    /**
+     * Adds relation for model
+     *
+     * @param string|Closure $relation
+     *
+     * @return $this
+     */
+    public function with($relation)
+    {
+        error_log(print_r(['relation' => $relation], true));
+        $args            = \func_get_args();
+        $relationalQuery = $this->addRelation($relation);
+        if ($relationalQuery && \func_num_args() === 2 && $args[1] instanceof Closure) {
+            $args[1]($relationalQuery);
+        }
+
+        return $this;
     }
 
     private function getRelationKeys($foreignKey, $localKey)
