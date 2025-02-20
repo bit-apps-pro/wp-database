@@ -6,8 +6,14 @@ use Closure;
 
 use DateTime;
 use DateTimeZone;
+use Error;
 use Exception;
 
+/**
+ * @mixin Model
+ *
+ * @method Model with(string $relationName, callable(QueryBuilder) $callback)
+ */
 class QueryBuilder
 {
     public const UPDATE = 'Update';
@@ -81,6 +87,15 @@ class QueryBuilder
     public function __clone()
     {
         $this->bindings = [];
+    }
+
+    public function __call($name, $arguments)
+    {
+        if (method_exists($this->_model, $name)) {
+            return $this->_model->{$name}(...$arguments);
+        }
+
+        throw new Error('Call to undefined method ' . __CLASS__ . '::' . esc_html($name) . '()');
     }
 
     /**
@@ -835,9 +850,8 @@ class QueryBuilder
     {
         $this->_method = self::UPDATE;
         $this->_model->fill($attributes);
-        $this->update = $this->prepareAttributeForSaveOrUpdate(true);
 
-        return $this;
+        return $this->save();
     }
 
     /**
@@ -880,9 +894,7 @@ class QueryBuilder
 
             $this->update = $columns;
 
-            $this->exec();
-
-            return Connection::prop('rows_affected');
+            return $this->exec() ? $this->_model : false;
         }
 
         $this->insert = $columns;
@@ -890,7 +902,7 @@ class QueryBuilder
         if ($insertId = $this->lastInsertId()) {
             $this->_model->setAttribute($pk, $insertId);
 
-            return true;
+            return $this->_model;
         }
 
         return false;
@@ -951,24 +963,6 @@ class QueryBuilder
         }
 
         return $this->exec();
-    }
-
-    /**
-     * Adds relation for model
-     *
-     * @param string|Closure $relation
-     *
-     * @return $this
-     */
-    public function with($relation)
-    {
-        $args            = \func_get_args();
-        $relationalQuery = $this->_model->addRelation($relation);
-        if ($relationalQuery && \func_num_args() === 2 && $args[1] instanceof Closure) {
-            $args[1]($relationalQuery);
-        }
-
-        return $this;
     }
 
     /**
@@ -1604,13 +1598,13 @@ class QueryBuilder
 
         $this->bindings = [];
 
-        Connection::query($sql);
+        $result = Connection::query($sql);
 
         if (!empty(Connection::prop('last_error'))) {
             return false;
         }
 
-        return Connection::prop('last_result');
+        return $this->_method === self::SELECT ? Connection::prop('last_result') : $result;
     }
 
     /**
