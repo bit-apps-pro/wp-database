@@ -44,6 +44,7 @@ trait Relations
     public function newBelongsTo($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
+        $model->setParent($this);
         $model->setRelateAs('oneToOne');
         $model->_relationKeys['oneToOne'] = [
             'foreignKey' => $foreignKey,
@@ -70,6 +71,7 @@ trait Relations
     public function newHasMany($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
+        $model->setParent($this);
         $model->setRelateAs('hasMany');
         $model->_relationKeys['hasMany'] = [
             'foreignKey' => $foreignKey,
@@ -91,6 +93,7 @@ trait Relations
     public function newBelongsToMany($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
+        $model->setParent($this);
         $model->setRelateAs('belongsToMany');
         $model->_relationKeys['belongsToMany'] = [
             'foreignKey' => $foreignKey,
@@ -110,13 +113,9 @@ trait Relations
         return $this->_relations;
     }
 
-    public function addRelation($relation)
+    public function addRelation(array $relation)
     {
-        if (method_exists($this, $relation)) {
-            $this->_relations[$relation] = $this->{$relation}();
-
-            return $this->_relations[$relation];
-        }
+        $this->_relations = array_merge($this->_relations, $relation);
     }
 
     public function getRelationalKeys()
@@ -125,22 +124,118 @@ trait Relations
     }
 
     /**
+     * Prepares relations to query
+     *
+     * @param array $relations
+     *
+     * @return array<int, QueryBuilder>
+     */
+    public function prepareRelation(array $relations): array
+    {
+        $preparedRelation = [];
+        foreach ($relations as $key => $value) {
+            if (\is_int($key) && \is_string($value) && ($method = explode(' ', $value)[0]) && method_exists($this, $method)) {
+                $preparedRelation[$value] = $this->{$method}();
+                unset($relations[$key]);
+            }
+        }
+
+        foreach ($relations as $key => $value) {
+            if (\is_string($key) && ($method = explode(' ', $key)[0]) && method_exists($this, $method)) {
+                $preparedRelation[$key] = $this->{$method}();
+                if ($value instanceof Closure) {
+                    $value($preparedRelation[$key]);
+                }
+            }
+        }
+
+        return $preparedRelation;
+    }
+
+    /**
      * Adds relation for model
      *
-     * @param string|Closure $relation
+     * @param string|array $relation
+     * @param Closure      $callback
      *
      * @return $this
      */
-    public function with($relation)
+    public function with($relation, $callback = null)
     {
-        error_log(print_r(['relation' => $relation], true));
-        $args            = \func_get_args();
-        $relationalQuery = $this->addRelation($relation);
-        if ($relationalQuery && \func_num_args() === 2 && $args[1] instanceof Closure) {
-            $args[1]($relationalQuery);
+        $relations = [];
+        if ($callback instanceof Closure) {
+            $relations = $this->prepareRelation([$relation => $callback]);
+        } else {
+            $relations = $this->prepareRelation(
+                \is_string($relation) ? [$relation => null] : \func_get_args()
+            );
+        }
+
+        $this->addRelation($relations);
+
+        return $this;
+    }
+
+    /**
+     * Adds count as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withCount($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'count');
+    }
+
+    /**
+     * Adds aggregate sub query to this query
+     *
+     * @param array $relation
+     * @param mixed $column
+     * @param mixed $function
+     *
+     * @return $this
+     */
+    public function withAggregate($relation, $column, $function)
+    {
+        if (empty($relation)) {
+            return $this;
+        }
+
+        if (empty($this->getQueryBuilder()->select)) {
+            $this->getQueryBuilder()->select = ["`{$this->getTable()}`.*"];
+        }
+
+        foreach ($this->prepareRelation(\is_array($relation) ? $relation : [$relation]) as $relationName => $relationalQuery) {
+            [$name, $alias] = $this->prepareRelationName($relationName);
+            if (\is_null($alias)) {
+                $alias = strtolower($name . '_' . $function);
+            }
+
+            $relationKey = $relationalQuery->getModel()
+                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
+            $query = $relationalQuery->whereRaw($relationalQuery->prepareColumnName($relationKey['foreignKey']) . '=' . $this->getQueryBuilder()->prepareColumnName($relationKey['localKey']))->selectRaw('count(*)')->prepare();
+            $this->getQueryBuilder()->selectRaw("({$query}) as `{$alias}`");
+
+            error_log(print_r([$relationKey, $alias, $query], true));
         }
 
         return $this;
+    }
+
+    public function prepareRelationName(string $relationName): array
+    {
+        $name      = $relationName;
+        $alias     = null;
+        $nameChunk = explode(' ', $relationName);
+
+        if (\count($nameChunk) === 3 && strtolower($nameChunk[1]) === 'as') {
+            $alias = $nameChunk[2];
+        }
+
+        return [$name, $alias];
     }
 
     private function getRelationKeys($foreignKey, $localKey)
@@ -201,7 +296,9 @@ trait Relations
                     $data = $data[0];
                 }
 
-                $model->setAttribute($relationName, $data);
+                [$name, $alias] = $this->prepareRelationName($relationName);
+
+                $model->setAttribute(\is_null($alias) ? $name : $alias, $data);
             }
         }
     }
