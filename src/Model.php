@@ -65,7 +65,6 @@ use RuntimeException;
  * @method static QueryBuilder                      withCount()
  * @method static null|int                          count()
  * @method static bool|string                       delete()
- * @method static QueryBuilder                      with($relation)
  * @method static void                              startTransaction()
  * @method static void                              commit()
  * @method static void                              rollback()

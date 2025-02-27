@@ -26,6 +26,8 @@ class QueryBuilder
 
     public const TIME_FORMAT = 'Y-m-d H:i:s';
 
+    public $select = [];
+
     protected $table;
 
     protected $limit;
@@ -47,8 +49,6 @@ class QueryBuilder
     protected $having = [];
 
     protected $bindings = [];
-
-    protected $select = [];
 
     protected $insert = [];
 
@@ -188,6 +188,20 @@ class QueryBuilder
         return $this->get($columns);
     }
 
+    public function prepareColumnName(string $column)
+    {
+        if (strpos($column, '.') !== false) {
+            return $column;
+        }
+
+        $table = "`{$this->table}`.";
+        if ($column != '*') {
+            $column = "`{$column}`";
+        }
+
+        return $table . $column;
+    }
+
     /**
      * Selects column for query
      *
@@ -197,7 +211,49 @@ class QueryBuilder
      */
     public function select($columns = ['*'])
     {
-        $this->select = !\is_array($columns) ? \func_get_args() : $columns;
+        $select = \is_array($columns) ? $columns : \func_get_args();
+
+        $this->select = [];
+        foreach ($select as $column) {
+            $this->select[] = $this->prepareColumnName($column);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Adds column to select list
+     *
+     * @param array|string $columns
+     *
+     * @return $this
+     */
+    public function addSelect($columns)
+    {
+        $select = !\is_array($columns) ? \func_get_args() : $columns;
+
+        foreach ($select as $column) {
+            if (\in_array($column, $this->select, true)) {
+                continue;
+            }
+            $this->select[] = $this->prepareColumnName($column);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Selects raw query as column for query
+     *
+     * @param array|string $columns
+     *
+     * @return $this
+     */
+    public function selectRaw($columns)
+    {
+        $select = !\is_array($columns) ? \func_get_args() : $columns;
+
+        $this->select = array_merge($this->select, $select);
 
         return $this;
     }
@@ -211,9 +267,9 @@ class QueryBuilder
      */
     public function get($columns = ['*'])
     {
-        $columns = isset($columns) && \is_array($columns) ? $columns : \func_get_args();
+        $columns = \is_array($columns) ? $columns : \func_get_args();
         if (empty($this->select) || $columns !== ['*']) {
-            $this->select = $columns;
+            $this->select($columns);
         }
 
         $this->_method = self::SELECT;
@@ -908,17 +964,17 @@ class QueryBuilder
         return false;
     }
 
-    /**
-     * Set count for select
-     *
-     * @return $this
-     */
-    public function withCount()
-    {
-        $this->select[] = 'COUNT(*) as count';
+    // /**
+    //  * Set count for select
+    //  *
+    //  * @return $this
+    //  */
+    // public function withCount()
+    // {
+    //     $this->select[] = 'COUNT(*) as count';
 
-        return $this;
-    }
+    //     return $this;
+    // }
 
     /**
      * Get counts for current model
@@ -1004,8 +1060,11 @@ class QueryBuilder
      */
     public function prepare($sql = null)
     {
+        error_log(print_r([$this->_method], true));
         if (\is_null($sql) && isset($this->_method)) {
             $sql = $this->{'prepare' . $this->_method}();
+        } elseif (!empty($this->select)) {
+            $sql = $this->prepareSelect();
         }
 
         return empty($this->bindings)
@@ -1570,7 +1629,9 @@ class QueryBuilder
     private function prepareDelete()
     {
         if (property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes) {
-            return $this->update(['deleted_at' => $this->currentTimestamp()])->prepareUpdate();
+            $this->update['deleted_at'] = $this->currentTimestamp();
+
+            return $this->prepareUpdate();
         }
 
         $sql = 'DELETE FROM ' . $this->table;
