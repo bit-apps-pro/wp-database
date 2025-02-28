@@ -44,7 +44,6 @@ trait Relations
     public function newBelongsTo($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
-        $model->setParent($this);
         $model->setRelateAs('oneToOne');
         $model->_relationKeys['oneToOne'] = [
             'foreignKey' => $foreignKey,
@@ -71,7 +70,6 @@ trait Relations
     public function newHasMany($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
-        $model->setParent($this);
         $model->setRelateAs('hasMany');
         $model->_relationKeys['hasMany'] = [
             'foreignKey' => $foreignKey,
@@ -93,7 +91,6 @@ trait Relations
     public function newBelongsToMany($model, $foreignKey = null, $localKey = null)
     {
         $model = new $model();
-        $model->setParent($this);
         $model->setRelateAs('belongsToMany');
         $model->_relationKeys['belongsToMany'] = [
             'foreignKey' => $foreignKey,
@@ -208,6 +205,9 @@ trait Relations
             $this->getQueryBuilder()->select = ["`{$this->getTable()}`.*"];
         }
 
+        if ($column !== '*') {
+            $column = $this->getQueryBuilder()->prepareColumnName($column);
+        }
         foreach ($this->prepareRelation(\is_array($relation) ? $relation : [$relation]) as $relationName => $relationalQuery) {
             [$name, $alias] = $this->prepareRelationName($relationName);
             if (\is_null($alias)) {
@@ -216,11 +216,65 @@ trait Relations
 
             $relationKey = $relationalQuery->getModel()
                 ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
-            $query = $relationalQuery->whereRaw($relationalQuery->prepareColumnName($relationKey['foreignKey']) . '=' . $this->getQueryBuilder()->prepareColumnName($relationKey['localKey']))->selectRaw('count(*)')->prepare();
-            $this->getQueryBuilder()->selectRaw("({$query}) as `{$alias}`");
+            $relationalQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $relationalQuery->prepareColumnName($relationKey['foreignKey']));
 
-            error_log(print_r([$relationKey, $alias, $query], true));
+            if ($function === 'exists') {
+                $query = $relationalQuery->select($column)->prepare();
+                $this->getQueryBuilder()->selectRaw("exists({$query}) as `{$alias}`")->withCast([$alias => 'bool']);
+            } else {
+                $query = $relationalQuery->selectRaw(\sprintf('%s(%s)', $function, $column))->prepare();
+                $this->getQueryBuilder()->selectRaw("({$query}) as `{$alias}`");
+            }
         }
+
+        return $this;
+    }
+
+    public function whereHas($relation, $callback = null)
+    {
+        $relations = [];
+        if ($callback instanceof Closure) {
+            $relations = $this->prepareRelation([$relation => $callback]);
+        } else {
+            $relations = $this->prepareRelation(
+                \is_string($relation) ? [$relation => null] : \func_get_args()
+            );
+        }
+
+        foreach ($relations as $relationName => $relationalQuery) {
+            $relationKey = $relationalQuery->getModel()
+                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
+            $relationalQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $relationalQuery->prepareColumnName($relationKey['foreignKey']));
+
+            $query = $relationalQuery->select('*')->prepare();
+            $this->getQueryBuilder()->whereRaw("exists({$query})");
+        }
+
+        return $this;
+    }
+
+    public function withWhereHas($relation, $callback = null)
+    {
+        $relations = [];
+        if ($callback instanceof Closure) {
+            $relations = $this->prepareRelation([$relation => $callback]);
+        } else {
+            $relations = $this->prepareRelation(
+                \is_string($relation) ? [$relation => null] : \func_get_args()
+            );
+        }
+
+        foreach ($relations as $relationName => $relationalQuery) {
+            $relationKey = $relationalQuery->getModel()
+                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
+            $newQuery = $relationalQuery->newQuery();
+            $newQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $newQuery->prepareColumnName($relationKey['foreignKey']));
+
+            $query = $newQuery->select('*')->prepare();
+            $this->getQueryBuilder()->whereRaw("exists({$query})");
+        }
+
+        $this->addRelation($relations);
 
         return $this;
     }
