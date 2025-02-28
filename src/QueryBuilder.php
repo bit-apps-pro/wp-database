@@ -904,10 +904,14 @@ class QueryBuilder
      */
     public function update($attributes = [])
     {
-        $this->_method = self::UPDATE;
         $this->_model->fill($attributes);
+        if ($this->_model->exists()) {
+            return $this->save();
+        }
 
-        return $this->save();
+        $this->update = $this->prepareAttributeForSaveOrUpdate(true);
+
+        return $this->exec();
     }
 
     /**
@@ -1060,16 +1064,29 @@ class QueryBuilder
      */
     public function prepare($sql = null)
     {
-        error_log(print_r([$this->_method], true));
-        if (\is_null($sql) && isset($this->_method)) {
-            $sql = $this->{'prepare' . $this->_method}();
-        } elseif (!empty($this->select)) {
-            $sql = $this->prepareSelect();
+        if (\is_null($sql)) {
+            $sql = $this->toSql();
         }
 
         return empty($this->bindings)
          || strpos($sql, '%') === false
          ? $sql : Connection::prepare($sql, $this->bindings);
+    }
+
+    /**
+     * Prepares current query string
+     *
+     * @return string
+     */
+    public function toSql()
+    {
+        if (isset($this->_method)) {
+            $sql = $this->{'prepare' . $this->_method}();
+        } elseif (!empty($this->select)) {
+            $sql = $this->prepareSelect();
+        }
+
+        return $sql;
     }
 
     /**
@@ -1338,7 +1355,7 @@ class QueryBuilder
             $absHour = abs($hours);
             $absMins = abs($minutes * 60);
 
-            $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
+            $timezoneString = \sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
         $dateTime = new DateTime('now', new DateTimeZone($timezoneString));
@@ -1504,8 +1521,11 @@ class QueryBuilder
      */
     private function prepareAttributeForSaveOrUpdate($isUpdate = false)
     {
-        if ($isUpdate) {
+        if ($isUpdate && $this->_model->exists()) {
             $columnsToPrepare = array_keys($this->_model->getDirtyAttributes());
+            $this->bindings   = [];
+        } elseif ($isUpdate && !$this->_model->exists()) {
+            $columnsToPrepare = array_keys($this->_model->getAttributes());
             $this->bindings   = [];
         } else {
             $columnsToPrepare = array_keys($this->_model->getAttributes());
@@ -1652,7 +1672,6 @@ class QueryBuilder
         if (\is_null($sql)) {
             $sql = $this->prepare($sql);
         }
-
         if (\is_null($sql)) {
             throw new Exception('SQL query is null');
         }
