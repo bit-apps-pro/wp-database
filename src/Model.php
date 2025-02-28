@@ -434,6 +434,17 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return self::$_instance;
     }
 
+    public function withCast(array $casts)
+    {
+        if (!isset($this->casts)) {
+            $this->casts = [];
+        }
+
+        $this->casts = array_merge($this->casts, $casts);
+
+        return $this;
+    }
+
     private function castTo($column, $value)
     {
         if (\is_null($value)) {
@@ -477,6 +488,11 @@ abstract class Model implements ArrayAccess, JsonSerializable
     private function castToString($value)
     {
         return (string) $value;
+    }
+
+    private function castToBool($value)
+    {
+        return \boolval($value);
     }
 
     private function castToDate($value)
