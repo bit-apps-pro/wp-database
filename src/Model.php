@@ -72,7 +72,7 @@ use RuntimeException;
  */
 abstract class Model implements ArrayAccess, JsonSerializable
 {
-    use Relations;
+    use Relations, HasEvents;
 
     public $timestamps = true;
 
@@ -89,6 +89,8 @@ abstract class Model implements ArrayAccess, JsonSerializable
     protected $attributes = [];
 
     protected $dirty = [];
+
+    protected static $booted = [];
 
     private static $_instance;
 
@@ -140,6 +142,8 @@ abstract class Model implements ArrayAccess, JsonSerializable
         if (!isset($this->primaryKey)) {
             $this->primaryKey = 'id';
         }
+
+        $this->bootIfNotBooted();
 
         if (\is_array($attributes)) {
             $this->fill($attributes);
@@ -360,6 +364,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
         $this->retrieveRelateData($this->getQueryBuilder());
         if (\count($result) == 1 && $setAttribute) {
+            $this->fireEvent('retrieved');
             $this->fill((array) $result[0], true);
             $this->setExists(true);
             $this->setRelatedData($this);
@@ -374,6 +379,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
                 $model->fill((array) $row, true);
                 $this->setRelatedData($model);
                 $model->setExists(true);
+                $this->fireEvent('retrieved', $model);
 
                 return $model;
             },
@@ -425,15 +431,6 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->attributes;
     }
 
-    private static function getInstance()
-    {
-        if (\is_null(self::$_instance)) {
-            self::$_instance = new static();
-        }
-
-        return self::$_instance;
-    }
-
     public function withCast(array $casts)
     {
         if (!isset($this->casts)) {
@@ -443,6 +440,47 @@ abstract class Model implements ArrayAccess, JsonSerializable
         $this->casts = array_merge($this->casts, $casts);
 
         return $this;
+    }
+
+    /**
+     * Check if the model needs to be booted and if so, do it.
+     *
+     * @return void
+     */
+    protected function bootIfNotBooted()
+    {
+        if (! isset(static::$booted[static::class])) {
+            static::$booted[static::class] = true;
+
+            $this->fireEvent('booting');
+
+            static::booting();
+            static::boot();
+            static::booted();
+
+            $this->fireEvent('booted');
+        }
+    }
+
+    protected static function booting()
+    {
+    }
+
+    protected static function boot()
+    {
+    }
+
+    protected static function booted()
+    {
+    }
+
+    private static function getInstance()
+    {
+        if (\is_null(self::$_instance)) {
+            self::$_instance = new static();
+        }
+
+        return self::$_instance;
     }
 
     private function castTo($column, $value)
