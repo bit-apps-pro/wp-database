@@ -1089,6 +1089,19 @@ class QueryBuilder
         return $sql;
     }
 
+    public function when($value = null, ?callable $callback = null, ?callable $default = null)
+    {
+        $value = $value instanceof Closure ? $value($this) : $value;
+
+        if ($value) {
+            return $callback($this, $value) ?? $this;
+        } elseif ($default) {
+            return $default($this, $value) ?? $this;
+        }
+
+        return $this;
+    }
+
     /**
      * Process conditions
      *
@@ -1355,7 +1368,7 @@ class QueryBuilder
             $absHour = abs($hours);
             $absMins = abs($minutes * 60);
 
-            $timezoneString = \sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
+            $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
         $dateTime = new DateTime('now', new DateTimeZone($timezoneString));
@@ -1669,6 +1682,7 @@ class QueryBuilder
      */
     private function exec($sql = null)
     {
+        $this->dispatchEvent('pre');
         if (\is_null($sql)) {
             $sql = $this->prepare($sql);
         }
@@ -1683,8 +1697,51 @@ class QueryBuilder
         if (!empty(Connection::prop('last_error'))) {
             return false;
         }
+        $this->dispatchEvent('post');
 
         return $this->_method === self::SELECT ? Connection::prop('last_result') : $result;
+    }
+
+    /**
+     * Dispatches model event
+     *
+     * @param string $type pre|post
+     */
+    private function dispatchEvent($type)
+    {
+        $prefix = null;
+        $suffix = null;
+
+        if ($type === 'pre') {
+            $suffix = 'ing';
+        } else {
+            $suffix = 'ed';
+        }
+
+        switch ($this->_method) {
+            case self::INSERT:
+                if (\count($this->_model->getAttributes())) {
+                    $suffix = 'creat';
+                }
+
+                break;
+            case self::UPDATE:
+                if ($this->_model->exists()) {
+                    $suffix = 'updat';
+                }
+
+                break;
+            case self::DELETE:
+                if ($this->_model->exists()) {
+                    $suffix = 'delet';
+                }
+
+                break;
+        }
+
+        if (!\is_null($prefix)) {
+            $this->_model->fireEvent($prefix . $suffix);
+        }
     }
 
     /**

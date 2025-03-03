@@ -222,7 +222,7 @@ trait Relations
                 $query = $relationalQuery->select($column)->prepare();
                 $this->getQueryBuilder()->selectRaw("exists({$query}) as `{$alias}`")->withCast([$alias => 'bool']);
             } else {
-                $query = $relationalQuery->selectRaw(\sprintf('%s(%s)', $function, $column))->prepare();
+                $query = $relationalQuery->selectRaw(sprintf('%s(%s)', $function, $column))->prepare();
                 $this->getQueryBuilder()->selectRaw("({$query}) as `{$alias}`");
             }
         }
