@@ -839,15 +839,20 @@ class QueryBuilder
         $this->raw      = $sql;
         $this->bindings = $bindings;
 
-        return $this->exec();
+        $result = $this->exec();
+
+        if (preg_match('/^SELECT /i', $sql)) {
+            $result = Connection::prop('last_result');
+        }
+
+        $this->raw = '';
+
+        return $result;
     }
 
     public function prepareRaw()
     {
-        $raw       = $this->raw;
-        $this->raw = '';
-
-        return $raw;
+        return $this->raw;
     }
 
     /**
