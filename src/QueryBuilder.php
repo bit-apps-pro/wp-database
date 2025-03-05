@@ -24,6 +24,8 @@ class QueryBuilder
 
     public const SELECT = 'Select';
 
+    public const RAW = 'Raw';
+
     public const TIME_FORMAT = 'Y-m-d H:i:s';
 
     public $select = [];
@@ -833,7 +835,19 @@ class QueryBuilder
      */
     public function raw($sql, $bindings = [])
     {
-        return $this->exec(Connection::prepare($sql, $bindings));
+        $this->_method  = self::RAW;
+        $this->raw      = $sql;
+        $this->bindings = $bindings;
+
+        return $this->exec();
+    }
+
+    public function prepareRaw()
+    {
+        $raw       = $this->raw;
+        $this->raw = '';
+
+        return $raw;
     }
 
     /**
