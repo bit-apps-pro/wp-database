@@ -841,11 +841,12 @@ class QueryBuilder
 
         $result = $this->exec();
 
-        if (preg_match('/^SELECT /i', $sql)) {
+        if (preg_match('/^SELECT /i', trim($sql))) {
             $result = Connection::prop('last_result');
         }
 
         $this->raw = '';
+        unset($this->_method);
 
         return $result;
     }
