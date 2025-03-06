@@ -6,8 +6,7 @@ use Closure;
 
 use DateTime;
 use DateTimeZone;
-use Error;
-use Exception;
+use RuntimeException;
 
 /**
  * @mixin Model
@@ -97,7 +96,7 @@ class QueryBuilder
             return $this->_model->{$name}(...$arguments);
         }
 
-        throw new Error('Call to undefined method ' . __CLASS__ . '::' . esc_html($name) . '()');
+        throw new RuntimeException('Call to undefined method ' . __CLASS__ . '::' . esc_html($name) . '()');
     }
 
     /**
@@ -1691,8 +1690,8 @@ class QueryBuilder
 
         $whereClause = $this->getWhere($this);
 
-        if (\is_null($whereClause)) {
-            return;
+        if (empty($whereClause)) {
+            return '';
         }
 
         $sql .= $whereClause;
@@ -1713,8 +1712,8 @@ class QueryBuilder
         if (\is_null($sql)) {
             $sql = $this->prepare($sql);
         }
-        if (\is_null($sql)) {
-            throw new Exception('SQL query is null');
+        if (empty($sql)) {
+            throw new RuntimeException('SQL query is empty');
         }
 
         $this->bindings = [];
