@@ -1688,7 +1688,14 @@ class QueryBuilder
         }
 
         $sql = 'DELETE FROM ' . $this->table;
-        $sql .= $this->getWhere($this);
+
+        $whereClause = $this->getWhere($this);
+
+        if (\is_null($whereClause)) {
+            return;
+        }
+
+        $sql .= $whereClause;
 
         return $sql;
     }
