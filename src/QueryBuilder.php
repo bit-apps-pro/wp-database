@@ -1741,19 +1741,19 @@ class QueryBuilder
         switch ($this->_method) {
             case self::INSERT:
                 if (\count($this->_model->getAttributes())) {
-                    $suffix = 'creat';
+                    $prefix = 'sav';
                 }
 
                 break;
             case self::UPDATE:
                 if ($this->_model->exists()) {
-                    $suffix = 'updat';
+                    $prefix = 'updat';
                 }
 
                 break;
             case self::DELETE:
                 if ($this->_model->exists()) {
-                    $suffix = 'delet';
+                    $prefix = 'delet';
                 }
 
                 break;
