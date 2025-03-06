@@ -16,12 +16,7 @@ trait HasEvents
 {
     protected static $events = [];
 
-    protected static function registerEvent($event, Closure $callback)
-    {
-        static::$events[$event] = $callback;
-    }
-
-    protected function fireEvent($event, $model = null)
+    public function fireEvent($event, $model = null)
     {
         if (\is_null($model)) {
             $model = $this;
@@ -30,6 +25,11 @@ trait HasEvents
         if (isset(static::$events[$event]) && \is_callable(static::$events[$event])) {
             static::$events[$event]($model);
         }
+    }
+
+    protected static function registerEvent($event, Closure $callback)
+    {
+        static::$events[$event] = $callback;
     }
 
     protected static function retrieved(Closure $callback)
