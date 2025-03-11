@@ -187,6 +187,71 @@ trait Relations
     }
 
     /**
+     * Adds min as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withMin($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'min');
+    }
+
+    /**
+     * Adds max as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withMax($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'max');
+    }
+
+    /**
+     * Adds avg as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withAvg($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'avg');
+    }
+
+    /**
+     * Adds sum as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withSum($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'sum');
+    }
+
+    /**
+     * Adds exists as sub query in this query
+     *
+     * @param string
+     * @param mixed $relation
+     *
+     * @return $this
+     */
+    public function withExists($relation)
+    {
+        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'exists');
+    }
+
+    /**
      * Adds aggregate sub query to this query
      *
      * @param array $relation
