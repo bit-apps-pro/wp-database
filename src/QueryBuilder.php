@@ -977,9 +977,11 @@ class QueryBuilder
         }
 
         $this->insert = $columns;
+        $this->_model->fireEvent('saving');
         $this->exec();
         if ($insertId = $this->lastInsertId()) {
             $this->_model->setAttribute($pk, $insertId);
+            $this->_model->fireEvent('saved');
 
             return $this->_model;
         }
@@ -1747,7 +1749,7 @@ class QueryBuilder
         switch ($this->_method) {
             case self::INSERT:
                 if (\count($this->_model->getAttributes())) {
-                    $prefix = 'sav';
+                    $prefix = 'creat';
                 }
 
                 break;
