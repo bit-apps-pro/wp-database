@@ -989,18 +989,6 @@ class QueryBuilder
         return false;
     }
 
-    // /**
-    //  * Set count for select
-    //  *
-    //  * @return $this
-    //  */
-    // public function withCount()
-    // {
-    //     $this->select[] = 'COUNT(*) as count';
-
-    //     return $this;
-    // }
-
     /**
      * Get counts for current model
      *
