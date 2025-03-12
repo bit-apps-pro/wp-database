@@ -100,6 +100,14 @@ class QueryBuilder
     }
 
     /**
+     * Clone this class with all conditions
+     */
+    public function clone()
+    {
+        return clone $this;
+    }
+
+    /**
      * Sets alias for table
      *
      * @param string $_from
@@ -536,13 +544,15 @@ class QueryBuilder
      */
     public function paginate($pageNo = 0, $perPage = 10)
     {
-        $selectedColumns = empty($this->select) ? ['*'] : $this->select;
+        if (empty($this->select)) {
+            $this->select = ['*'];
+        }
 
         $totalItems = (int) $this->count();
 
         $offset = ($pageNo > 1) ? ($pageNo * $perPage) - $perPage : 0;
 
-        $data = $this->take($perPage)->skip($offset)->get($selectedColumns);
+        $data = $this->take($perPage)->skip($offset)->get();
 
         $pages = ceil($totalItems / $perPage);
 
@@ -992,16 +1002,13 @@ class QueryBuilder
     /**
      * Get counts for current model
      *
-     * @return int|null
+     * @return int
      */
     public function count()
     {
-        $this->select  = ['COUNT(*) as count'];
-        $this->_method = 'Select';
-        $result        = $this->exec();
-        unset($this->select);
+        $result = $this->clone()->get('COUNT(*) as count');
 
-        return \is_array($result) && !empty($result[0]->count) ? $result[0]->count : null;
+        return \is_array($result) && !empty($result[0]->count) ? $result[0]->count : 0;
     }
 
     public function max($column)
