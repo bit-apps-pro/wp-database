@@ -29,6 +29,11 @@ class QueryBuilder
 
     public $select = [];
 
+    public $selectRaw = [
+        'columns'  => [],
+        'bindings' => [],
+    ];
+
     protected $table;
 
     protected $limit;
@@ -254,15 +259,17 @@ class QueryBuilder
     /**
      * Selects raw query as column for query
      *
-     * @param array|string $columns
+     * @param string $column
+     * @param mixed  $bindings
      *
      * @return $this
      */
-    public function selectRaw($columns)
+    public function selectRaw($column, $bindings = null)
     {
-        $select = !\is_array($columns) ? \func_get_args() : $columns;
-
-        $this->select = array_merge($this->select, $select);
+        $this->selectRaw['columns'][] = $column;
+        if (!empty($bindings)) {
+            $this->selectRaw['bindings'][] = $bindings;
+        }
 
         return $this;
     }
@@ -1392,6 +1399,20 @@ class QueryBuilder
         return $dateTime->format(self::TIME_FORMAT);
     }
 
+    private function prepareRawSelect()
+    {
+        $query = '';
+        if (!empty($this->selectRaw['columns'])) {
+            $query = implode(', ', $this->selectRaw['columns']);
+        }
+
+        if (!empty($this->selectRaw['bindings'])) {
+            $this->bindings = array_merge($this->bindings, $this->selectRaw['bindings']);
+        }
+
+        return $query;
+    }
+
     /**
      * Run bulk insert query
      *
@@ -1596,7 +1617,9 @@ class QueryBuilder
     private function prepareSelect()
     {
         $this->bindings = [];
-        $sql            = 'SELECT ' . implode(',', $this->select) . ' FROM ' . $this->table;
+        $sql            = 'SELECT ' . implode(',', $this->select);
+        $sql .= $this->prepareRawSelect();
+        $sql .= ' FROM ' . $this->table;
         $sql .= $this->getFrom();
         $sql .= $this->getJoin();
         $sql .= $this->getWhere($this);
