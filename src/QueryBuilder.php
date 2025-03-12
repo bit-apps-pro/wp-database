@@ -1013,7 +1013,7 @@ class QueryBuilder
      */
     public function count()
     {
-        $result = $this->clone()->get('COUNT(*) as count');
+        $result = $this->clone()->selectRaw('COUNT(*) as count')->exec();
 
         return \is_array($result) && !empty($result[0]->count) ? $result[0]->count : 0;
     }
@@ -1403,7 +1403,8 @@ class QueryBuilder
     {
         $query = '';
         if (!empty($this->selectRaw['columns'])) {
-            $query = implode(', ', $this->selectRaw['columns']);
+            $query = \count($this->select) ? ', ' : '';
+            $query .= implode(', ', $this->selectRaw['columns']);
         }
 
         if (!empty($this->selectRaw['bindings'])) {
