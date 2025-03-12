@@ -14,7 +14,9 @@ if (!\defined('ABSPATH')) {
 
 trait HasEvents
 {
-    protected static $events = [];
+    protected $events = [];
+
+    protected static $registeredEvents = [];
 
     public function fireEvent($event, $model = null)
     {
@@ -22,14 +24,25 @@ trait HasEvents
             $model = $this;
         }
 
-        if (isset(static::$events[$event]) && \is_callable(static::$events[$event])) {
-            static::$events[$event]($model);
+        if (isset(static::$registeredEvents[static::class . $event]) && \is_callable(static::$registeredEvents[static::class . $event])) {
+            static::$registeredEvents[static::class . $event]($model);
+        } elseif (isset($this->events[$event])) {
+            $this->fireCustomEvent($this->events[$event], $model);
+        }
+    }
+
+    public function fireCustomEvent($callback, $model)
+    {
+        if ($callback instanceof Closure) {
+            $callback($model);
+        } elseif (class_exists($callback) && method_exists($callback, 'handle')) {
+            (new $callback($model))->handle();
         }
     }
 
     protected static function registerEvent($event, Closure $callback)
     {
-        static::$events[$event] = $callback;
+        static::$registeredEvents[static::class . $event] = $callback;
     }
 
     protected static function retrieved(Closure $callback)
