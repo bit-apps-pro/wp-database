@@ -1503,7 +1503,7 @@ class QueryBuilder
     private function prepareColumnForWhere($clause)
     {
         if (isset($clause['column'])) {
-            return ' ' . $clause['column'];
+            return ' ' . $this->prepareColumnName($clause['column']);
         }
     }
 
