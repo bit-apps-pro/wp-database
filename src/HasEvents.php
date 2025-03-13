@@ -25,18 +25,18 @@ trait HasEvents
         }
 
         if (isset(static::$registeredEvents[static::class . $event]) && \is_callable(static::$registeredEvents[static::class . $event])) {
-            static::$registeredEvents[static::class . $event]($model);
+            return static::$registeredEvents[static::class . $event]($model);
         } elseif (isset($this->events[$event])) {
-            $this->fireCustomEvent($this->events[$event], $model);
+            return $this->fireCustomEvent($this->events[$event], $model);
         }
     }
 
     public function fireCustomEvent($callback, $model)
     {
         if ($callback instanceof Closure) {
-            $callback($model);
+            return $callback($model);
         } elseif (class_exists($callback) && method_exists($callback, 'handle')) {
-            (new $callback($model))->handle();
+            return (new $callback($model))->handle();
         }
     }
 
