@@ -1723,7 +1723,9 @@ class QueryBuilder
      */
     private function exec($sql = null)
     {
-        $this->dispatchEvent('pre');
+        if ($this->dispatchEvent('pre') === false) {
+            return false;
+        }
         if (\is_null($sql)) {
             $sql = $this->prepare($sql);
         }
@@ -1781,7 +1783,7 @@ class QueryBuilder
         }
 
         if (!\is_null($prefix)) {
-            $this->_model->fireEvent($prefix . $suffix);
+            return $this->_model->fireEvent($prefix . $suffix);
         }
     }
 
