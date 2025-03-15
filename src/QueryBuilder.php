@@ -260,15 +260,15 @@ class QueryBuilder
      * Selects raw query as column for query
      *
      * @param string $column
-     * @param mixed  $bindings
+     * @param array  $bindings
      *
      * @return $this
      */
-    public function selectRaw($column, $bindings = null)
+    public function selectRaw($column, array $bindings = [])
     {
         $this->selectRaw['columns'][] = $column;
         if (!empty($bindings)) {
-            $this->selectRaw['bindings'][] = $bindings;
+            $this->selectRaw['bindings'] = array_merge($this->selectRaw['bindings'], $bindings);
         }
 
         return $this;
@@ -1013,23 +1013,28 @@ class QueryBuilder
      */
     public function count()
     {
-        $result = $this->clone()->selectRaw('COUNT(*) as count')->exec();
-
-        return \is_array($result) && !empty($result[0]->count) ? $result[0]->count : 0;
+        return $this->aggregate('COUNT', $this->_model->getPrimaryKey());
     }
 
     public function max($column)
     {
-        $result = $this->clone()->selectRaw('MAX(`' . $column . '`) as max')->exec();
-
-        return \is_array($result) && !empty($result[0]->max) ? $result[0]->max : null;
+        return $this->aggregate('MAX', $column);
     }
 
     public function min($column)
     {
-        $result = $this->clone()->selectRaw('MIN(`' . $column . '`) as min')->exec();
+        return $this->aggregate('MIN', $column);
+    }
 
-        return \is_array($result) && !empty($result[0]->min) ? $result[0]->min : null;
+    public function aggregate($function, $column)
+    {
+        $query            = $this->clone();
+        $query->select    = [];
+        $query->selectRaw = [];
+        $result           = $query->selectRaw($function . '(' . $query->prepareColumnName($column) . ') as ' . $function)->exec();
+        error_log(print_r(compact('result'), true));
+
+        return \is_array($result) && !empty($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
 
     public function delete()
@@ -1099,8 +1104,9 @@ class QueryBuilder
     {
         if (isset($this->_method)) {
             $sql = $this->{'prepare' . $this->_method}();
-        } elseif (!empty($this->select)) {
-            $sql = $this->prepareSelect();
+        } elseif (!empty($this->select) || !empty($this->selectRaw)) {
+            $this->_method = self::SELECT;
+            $sql           = $this->prepareSelect();
         }
 
         return $sql;
