@@ -1152,6 +1152,7 @@ class QueryBuilder
                 }
 
                 if (isset($clause['query']) && !\is_null($type)) {
+                    $clause['query']->bindings = [];
                     $sql .= ' (' . $clause['query']->getConditions($clause['query'], $type) . ')';
                     $this->addBindings($clause['query']->getBindings());
 
