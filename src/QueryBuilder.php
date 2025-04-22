@@ -1032,7 +1032,6 @@ class QueryBuilder
         $query->select    = [];
         $query->selectRaw = [];
         $result           = $query->selectRaw($function . '(' . $query->prepareColumnName($column) . ') as ' . $function)->exec();
-        error_log(print_r(compact('result'), true));
 
         return \is_array($result) && !empty($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
@@ -1467,10 +1466,10 @@ class QueryBuilder
 
         if ($this->raw($sql, $this->bindings) !== false) {
             $nextID       = $this->lastInsertId();
-            $ids[]        = $nextID;
+            $ids        = [];
             $affectedRows = Connection::prop('rows_affected') - 1;
             while ($affectedRows--) {
-                $ids[] = $nextID + 1;
+                $ids[] = $nextID++;
             }
 
             if (
