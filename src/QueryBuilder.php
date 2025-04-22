@@ -1467,7 +1467,7 @@ class QueryBuilder
         if ($this->raw($sql, $this->bindings) !== false) {
             $nextID       = $this->lastInsertId();
             $ids        = [];
-            $affectedRows = Connection::prop('rows_affected') - 1;
+            $affectedRows = Connection::prop('rows_affected');
             while ($affectedRows--) {
                 $ids[] = $nextID++;
             }
