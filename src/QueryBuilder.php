@@ -27,6 +27,8 @@ class QueryBuilder
 
     public const TIME_FORMAT = 'Y-m-d H:i:s';
 
+    public static $TIME_ZONE;
+
     public $select = [];
 
     public $selectRaw = [
@@ -1380,7 +1382,18 @@ class QueryBuilder
      */
     protected function currentTimestamp()
     {
-        if (\function_exists('wp_timezone_string')) {
+        $timezoneString = $this->getTimeZone();
+
+        $dateTime = new DateTime('now', new DateTimeZone($timezoneString));
+
+        return $dateTime->format(self::TIME_FORMAT);
+    }
+
+    protected function getTimeZone()
+    {
+        if (isset(static::$TIME_ZONE)) {
+            $timezoneString = static::$TIME_ZONE;
+        } elseif (\function_exists('wp_timezone_string')) {
             $timezoneString = wp_timezone_string();
         } elseif (!($timezoneString = get_option('timezone_string'))) {
             $offset  = (float) get_option('gmt_offset');
@@ -1394,9 +1407,7 @@ class QueryBuilder
             $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
-        $dateTime = new DateTime('now', new DateTimeZone($timezoneString));
-
-        return $dateTime->format(self::TIME_FORMAT);
+        return $timezoneString;
     }
 
     private function prepareRawSelect()
@@ -1466,7 +1477,7 @@ class QueryBuilder
 
         if ($this->raw($sql, $this->bindings) !== false) {
             $nextID       = $this->lastInsertId();
-            $ids        = [];
+            $ids          = [];
             $affectedRows = Connection::prop('rows_affected');
             while ($affectedRows--) {
                 $ids[] = $nextID++;
