@@ -373,7 +373,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return $this;
         }
 
-        return array_map(
+        return new Collection(array_map(
             function ($row) {
                 $model = clone $this;
                 $model->fill((array) $row, true);
@@ -384,7 +384,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
                 return $model;
             },
             $result
-        );
+        ));
     }
 
     public function getQueryBuilder()
@@ -424,11 +424,17 @@ abstract class Model implements ArrayAccess, JsonSerializable
     #[ReturnTypeWillChange]
     public function jsonSerialize()
     {
+        return $this->toArray();
+    }
+
+    public function  toArray()
+    {
         if (!$this->exists()) {
             return [];
         }
 
         return $this->attributes;
+        
     }
 
     public function withCast(array $casts)
