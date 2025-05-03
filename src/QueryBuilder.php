@@ -1500,6 +1500,70 @@ class QueryBuilder
         return false;
     }
 
+    public function upsert(array $values, array|null $update = null)
+    {
+        if(!is_array(reset($values))) {
+            $values = [$values];
+        }
+
+        if (is_null($update)) {
+            $update = array_keys($values[0]);
+        }
+
+        $this->bindings = [];
+        $columns = array_keys($values[0]);
+        ksort($columns);
+        $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps && !in_array('created_at', $columns);
+        if ($createdAt) {
+            $columns[] = 'created_at';
+        }
+        $sql = 'INSERT INTO ' . $this->table;
+        $sql .= ' (' . implode(', ', $columns) . ')';
+
+        $sql .= ' VALUES ';
+        $insertAbleValues = [];
+        foreach ($values as $row) {
+            ksort($row);
+            if ($createdAt) {
+                $row['created_at'] = $this->currentTimestamp();
+            }
+
+            $rowValues = array_values($row);
+            $insertAbleValues[]  = ' ('
+                . implode(
+                    ', ',
+                    array_map(
+                        function ($value) {
+                            if (\is_null($value)) {
+                                return 'NULL';
+                            }
+
+                            $this->bindings[] = $value;
+
+                            return $this->getValueType($value);
+                        },
+                        $rowValues
+                    )
+                ) . ')';
+        }
+
+        $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
+        $sql .= ' ON DUPLICATE KEY UPDATE ';
+        if (array_key_exists('created_at', $update)) {
+            $update = array_diff($update, ['created_at']);
+            $update[] = 'updated_at';
+        }
+        $update = array_map(function($column) {
+            if ($column === 'updated_at') {
+                return $column . ' = VALUES(created_at)';
+            }
+            return $column . ' = VALUES(' . $column . ')';
+        }, $update);
+        $sql .= implode(', ', $update);
+        $sql .= ';';
+        return $this->raw($sql, $this->bindings);
+    }
+
     /**
      * Table alias for select query
      *
