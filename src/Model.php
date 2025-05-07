@@ -362,6 +362,10 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return false;
         }
 
+        if (\count($result) === 0) {
+            return [];
+        }
+
         $this->retrieveRelateData($this->getQueryBuilder());
         if (\count($result) == 1 && $setAttribute) {
             $this->fireEvent('retrieved');
@@ -373,18 +377,20 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return $this;
         }
 
-        return new Collection(array_map(
-            function ($row) {
-                $model = clone $this;
-                $model->fill((array) $row, true);
-                $this->setRelatedData($model);
-                $model->setExists(true);
-                $this->fireEvent('retrieved', $model);
+        return new Collection(
+            array_map(
+                function ($row) {
+                    $model = clone $this;
+                    $model->fill((array) $row, true);
+                    $this->setRelatedData($model);
+                    $model->setExists(true);
+                    $this->fireEvent('retrieved', $model);
 
-                return $model;
-            },
-            $result
-        ));
+                    return $model;
+                },
+                $result
+            )
+        );
     }
 
     public function getQueryBuilder()
@@ -427,14 +433,13 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->toArray();
     }
 
-    public function  toArray()
+    public function toArray()
     {
         if (!$this->exists()) {
             return [];
         }
 
         return $this->attributes;
-        
     }
 
     public function withCast(array $casts)
