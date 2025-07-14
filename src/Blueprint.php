@@ -405,13 +405,6 @@ class Blueprint
         return $this;
     }
 
-    public function binary()
-    {
-        $this->columns[$this->columnIndex]['props'][] = 'BINARY';
-
-        return $this;
-    }
-
     public function primary()
     {
         $this->primaryKey[]                            = $this->columns[$this->columnIndex]['name'];
