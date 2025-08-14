@@ -1050,6 +1050,7 @@ class QueryBuilder
 
     /**
      * Starts transaction
+     * @deprecated Use Connection::startTransaction() instead
      *
      * @return bool
      */
@@ -1060,6 +1061,7 @@ class QueryBuilder
 
     /**
      * Commits current transaction
+     * @deprecated Use Connection::commit() instead
      *
      * @return bool
      */
@@ -1070,6 +1072,7 @@ class QueryBuilder
 
     /**
      * Rollback previously execute query
+     * @deprecated Use Connection::rollback() instead
      *
      * @return void
      */
