@@ -1467,7 +1467,7 @@ class QueryBuilder
                                 return 'NULL';
                             }
 
-                            $this->bindings[] = $value;
+                            $this->bindings[] = is_scalar($value) ? $value : wp_json_encode($value);
 
                             return $this->getValueType($value);
                         },
