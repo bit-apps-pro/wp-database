@@ -17,58 +17,76 @@ use RuntimeException;
 /**
  * Abstract class for model.
  *
- * @method static QueryBuilder                      from($_from)
- * @method static Model                             getModel()
- * @method static QueryBuilder                      queryFor($_for)
- * @method static QueryBuilder                      newQuery()
- * @method static void                              addBindings($bindings)
- * @method static array                             getBindings()
- * @method static Model|array<int,     Model>|false all($columns = ['*'])
- * @method static QueryBuilder                      select($columns = ['*'])
- * @method static Model|array<int,     Model>|false get($columns = ['*'])
- * @method static Model|bool                        first()
- * @method static Model|array<int,     Model>|false find($attributes)
- * @method static Model|bool                        findOne($attributes)
- * @method static string|string[]|null              getConditions(QueryBuilder $query, $type = 'where')
- * @method static string                            prepareOperatorForWhere($clause)
- * @method static QueryBuilder                      where(...$params)
- * @method static QueryBuilder                      whereIn(...$params)
- * @method static QueryBuilder                      orWhere(...$params)
- * @method static QueryBuilder                      whereRaw($sql, $bindings = [])
- * @method static QueryBuilder                      whereNull($column)
- * @method static QueryBuilder                      whereNotNull($column)
- * @method static QueryBuilder                      whereBetween($column, $start, $end)
- * @method static QueryBuilder                      orWhereBetween($column, $start, $end)
- * @method static QueryBuilder                      paginate($perPage = 10, $pageNo = 0)
- * @method static QueryBuilder                      groupBy($columns)
- * @method static QueryBuilder                      having(...$params)
- * @method static QueryBuilder                      orHaving(...$params)
- * @method static QueryBuilder                      join($table, $first_column, $operator = null, $second_column = null, $type = 'INNER')
- * @method static QueryBuilder                      leftJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      rightJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      fullJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      crossJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      on($first_column, $operator = null, $second_column = null, $bool = 'AND')
- * @method static QueryBuilder                      orOn($first_column, $operator = null, $second_column = null)
- * @method static string                            getOrderBy()
- * @method static QueryBuilder                      orderBy($column)
- * @method static QueryBuilder                      asc()
- * @method static QueryBuilder                      desc()
- * @method static object|null                       raw($sql, $bindings = [])
- * @method static QueryBuilder                      take($count)
- * @method static QueryBuilder                      skip($count)
- * @method static QueryBuilder                      getOffset()
- * @method static Model|array<int,     Model>|false insert($attributes = [])
- * @method static QueryBuilder                      update($attributes = [])
- * @method static string|bool                       destroy($ids = [])
- * @method static bool                              save()
- * @method static QueryBuilder                      withCount()
- * @method static null|int                          count()
- * @method static bool|string                       delete()
- * @method static void                              startTransaction()
- * @method static void                              commit()
- * @method static void                              rollback()
- * @method static string                            prepare($sql = null)
+ * Query-builder calls (where/select/get/with/withCount/...) are forwarded to
+ * {@see QueryBuilder} through __call/__callStatic.
+ *
+ * IDE support: the @method tags below give autocomplete in every editor
+ * (PhpStorm + VS Code/Intelephense); the @mixin lets PhpStorm Ctrl+Click jump
+ * to the real definitions. For autocomplete AND Ctrl+Click that work
+ * everywhere, start chains with the real static {@see Model::query()}.
+ *
+ * @method static QueryBuilder                  from($_from)
+ * @method static Model                         getModel()
+ * @method static QueryBuilder                  queryFor($_for)
+ * @method static QueryBuilder                  newQuery()
+ * @method static void                          addBindings($bindings)
+ * @method static array                         getBindings()
+ * @method static Model|array<int, Model>|false all($columns = ['*'])
+ * @method static QueryBuilder                  select($columns = ['*'])
+ * @method static QueryBuilder                  addSelect($columns)
+ * @method static QueryBuilder                  selectRaw($column, array $bindings = [])
+ * @method static Model|array<int, Model>|false get($columns = ['*'])
+ * @method static Model|bool                    first()
+ * @method static Model|array<int, Model>|false find($attributes)
+ * @method static Model|bool                    findOne($attributes)
+ * @method static QueryBuilder                  where(...$params)
+ * @method static QueryBuilder                  whereIn(...$params)
+ * @method static QueryBuilder                  orWhere(...$params)
+ * @method static QueryBuilder                  whereRaw($sql, $bindings = [])
+ * @method static QueryBuilder                  orWhereRaw($sql, $bindings = [])
+ * @method static QueryBuilder                  whereNull($column)
+ * @method static QueryBuilder                  whereNotNull($column)
+ * @method static QueryBuilder                  whereBetween($column, $start, $end)
+ * @method static QueryBuilder                  orWhereBetween($column, $start, $end)
+ * @method static QueryBuilder                  when($value = null, ?callable $callback = null, ?callable $default = null)
+ * @method static QueryBuilder                  paginate($perPage = 10, $pageNo = 0)
+ * @method static QueryBuilder                  groupBy($columns)
+ * @method static QueryBuilder                  having(...$params)
+ * @method static QueryBuilder                  orHaving(...$params)
+ * @method static QueryBuilder                  join($table, $first_column, $operator = null, $second_column = null, $type = 'INNER')
+ * @method static QueryBuilder                  leftJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  rightJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  fullJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  crossJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  orderBy($column)
+ * @method static QueryBuilder                  orderByRaw($query, $bindings = [])
+ * @method static QueryBuilder                  asc()
+ * @method static QueryBuilder                  desc()
+ * @method static object|null                   raw($sql, $bindings = [])
+ * @method static QueryBuilder                  take($count)
+ * @method static QueryBuilder                  skip($count)
+ * @method static Model|array<int, Model>|false insert($attributes = [])
+ * @method static Model|bool                    update($attributes = [])
+ * @method static string|bool                   destroy($ids = [])
+ * @method static Model|bool                    save()
+ * @method static Model|bool                    upsert(array $values, ?array $update = null)
+ * @method static QueryBuilder                  with(string|array $relation, ?Closure $callback = null)
+ * @method static QueryBuilder                  withCount(string|array $relation)
+ * @method static QueryBuilder                  withMin(string|array $relation)
+ * @method static QueryBuilder                  withMax(string|array $relation)
+ * @method static QueryBuilder                  withAvg(string|array $relation)
+ * @method static QueryBuilder                  withSum(string|array $relation)
+ * @method static QueryBuilder                  withExists(string|array $relation)
+ * @method static QueryBuilder                  whereHas(string|array $relation, ?Closure $callback = null)
+ * @method static QueryBuilder                  withWhereHas(string|array $relation, ?Closure $callback = null)
+ * @method static int|null                      count()
+ * @method static mixed                         max($column)
+ * @method static mixed                         min($column)
+ * @method static bool|string                   delete()
+ * @method static string                        toSql()
+ * @method static string                        prepare($sql = null)
+ *
+ * @mixin \BitApps\WPDatabase\QueryBuilder
  */
 abstract class Model implements ArrayAccess, JsonSerializable
 {
@@ -401,6 +419,16 @@ abstract class Model implements ArrayAccess, JsonSerializable
     public function newQuery()
     {
         return new QueryBuilder($this);
+    }
+
+    /**
+     * Canonical, IDE-navigable entry point to the query builder.
+     *
+     * @return QueryBuilder
+     */
+    public static function query()
+    {
+        return (new static())->newQuery();
     }
 
     #[ReturnTypeWillChange]

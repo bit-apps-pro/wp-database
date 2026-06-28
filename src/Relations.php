@@ -121,6 +121,16 @@ trait Relations
     }
 
     /**
+     * Returns the {localKey, foreignKey} pair for this model's active relation.
+     *
+     * @return array
+     */
+    public function getActiveRelationKey()
+    {
+        return $this->getRelationalKeys()[$this->getRelateAs()];
+    }
+
+    /**
      * Prepares relations to query
      *
      * @param array $relations
@@ -147,201 +157,6 @@ trait Relations
         }
 
         return $preparedRelation;
-    }
-
-    /**
-     * Adds relation for model
-     *
-     * @param string|array $relation
-     * @param Closure      $callback
-     *
-     * @return $this
-     */
-    public function with($relation, $callback = null)
-    {
-        $relations = [];
-        if ($callback instanceof Closure) {
-            $relations = $this->prepareRelation([$relation => $callback]);
-        } else {
-            $relations = $this->prepareRelation(
-                \is_string($relation) ? [$relation => null] : \func_get_args()
-            );
-        }
-
-        $this->addRelation($relations);
-
-        return $this;
-    }
-
-    /**
-     * Adds count as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withCount($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'count');
-    }
-
-    /**
-     * Adds min as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withMin($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'min');
-    }
-
-    /**
-     * Adds max as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withMax($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'max');
-    }
-
-    /**
-     * Adds avg as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withAvg($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'avg');
-    }
-
-    /**
-     * Adds sum as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withSum($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'sum');
-    }
-
-    /**
-     * Adds exists as sub query in this query
-     *
-     * @param string
-     * @param mixed $relation
-     *
-     * @return $this
-     */
-    public function withExists($relation)
-    {
-        return $this->withAggregate(\is_array($relation) ? $relation : \func_get_args() , '*', 'exists');
-    }
-
-    /**
-     * Adds aggregate sub query to this query
-     *
-     * @param array $relation
-     * @param mixed $column
-     * @param mixed $function
-     *
-     * @return $this
-     */
-    public function withAggregate($relation, $column, $function)
-    {
-        if (empty($relation)) {
-            return $this;
-        }
-
-        if (empty($this->getQueryBuilder()->select)) {
-            $this->getQueryBuilder()->select = ["`{$this->getTable()}`.*"];
-        }
-
-        if ($column !== '*') {
-            $column = $this->getQueryBuilder()->prepareColumnName($column);
-        }
-        foreach ($this->prepareRelation(\is_array($relation) ? $relation : [$relation]) as $relationName => $relationalQuery) {
-            [$name, $alias] = $this->prepareRelationName($relationName);
-            if (\is_null($alias)) {
-                $alias = strtolower($name . '_' . $function);
-            }
-
-            $relationKey = $relationalQuery->getModel()
-                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
-            $relationalQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $relationalQuery->prepareColumnName($relationKey['foreignKey']));
-
-            if ($function === 'exists') {
-                $query = $relationalQuery->select($column)->prepare();
-                $this->getQueryBuilder()->selectRaw("exists({$query}) as `{$alias}`")->withCast([$alias => 'bool']);
-            } else {
-                $query = $relationalQuery->selectRaw(sprintf('%s(%s)', $function, $column))->prepare();
-                $this->getQueryBuilder()->selectRaw("({$query}) as `{$alias}`");
-            }
-        }
-
-        return $this;
-    }
-
-    public function whereHas($relation, $callback = null)
-    {
-        $relations = [];
-        if ($callback instanceof Closure) {
-            $relations = $this->prepareRelation([$relation => $callback]);
-        } else {
-            $relations = $this->prepareRelation(
-                \is_string($relation) ? [$relation => null] : \func_get_args()
-            );
-        }
-
-        foreach ($relations as $relationName => $relationalQuery) {
-            $relationKey = $relationalQuery->getModel()
-                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
-            $relationalQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $relationalQuery->prepareColumnName($relationKey['foreignKey']));
-
-            $query = $relationalQuery->select('*')->prepare();
-            $this->getQueryBuilder()->whereRaw("exists({$query})");
-        }
-
-        return $this;
-    }
-
-    public function withWhereHas($relation, $callback = null)
-    {
-        $relations = [];
-        if ($callback instanceof Closure) {
-            $relations = $this->prepareRelation([$relation => $callback]);
-        } else {
-            $relations = $this->prepareRelation(
-                \is_string($relation) ? [$relation => null] : \func_get_args()
-            );
-        }
-
-        foreach ($relations as $relationName => $relationalQuery) {
-            $relationKey = $relationalQuery->getModel()
-                ->getRelationalKeys()[$relationalQuery->getModel()->getRelateAs()];
-            $newQuery = $relationalQuery->newQuery();
-            $newQuery->whereRaw($this->getQueryBuilder()->prepareColumnName($relationKey['localKey']) . '=' . $newQuery->prepareColumnName($relationKey['foreignKey']));
-
-            $query = $newQuery->select('*')->prepare();
-            $this->getQueryBuilder()->whereRaw("exists({$query})");
-        }
-
-        $this->addRelation($relations);
-
-        return $this;
     }
 
     public function prepareRelationName(string $relationName): array
@@ -377,8 +192,7 @@ trait Relations
         if (\count($relations) > 0) {
             foreach ($relations as $relationName => $relationQuery) {
                 $parentQuery = clone $query;
-                $relationKey = $relationQuery->getModel()
-                    ->getRelationalKeys()[$relationQuery->getModel()->getRelateAs()];
+                $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
                 $relationQuery->whereRaw(
                     $relationKey['foreignKey']
@@ -404,8 +218,7 @@ trait Relations
         $relations = $this->getRelations();
         if (\count($relations) > 0) {
             foreach ($relations as $relationName => $relationQuery) {
-                $relationKey = $relationQuery->getModel()
-                    ->getRelationalKeys()[$relationQuery->getModel()->getRelateAs()];
+                $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
                 $data = isset(
                     $this->_relatedData[$relationName][$model->getAttribute($relationKey['localKey'])]
