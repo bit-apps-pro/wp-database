@@ -49,7 +49,7 @@ use RuntimeException;
  * @method static QueryBuilder                  whereBetween($column, $start, $end)
  * @method static QueryBuilder                  orWhereBetween($column, $start, $end)
  * @method static QueryBuilder                  when($value = null, ?callable $callback = null, ?callable $default = null)
- * @method static QueryBuilder                  paginate($perPage = 10, $pageNo = 0)
+ * @method static array                         paginate($pageNo = 0, $perPage = 10)
  * @method static QueryBuilder                  groupBy($columns)
  * @method static QueryBuilder                  having(...$params)
  * @method static QueryBuilder                  orHaving(...$params)
