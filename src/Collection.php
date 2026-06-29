@@ -50,7 +50,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
         }, $this->items));
     }
 
-    public function first(callable|null $callback = null, $default = null)
+    public function first(?callable $callback = null, $default = null)
     {
         foreach ($this->items as $item) {
             if ($callback === null || $callback($item)) {
@@ -61,7 +61,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
         return $default;
     }
 
-    public function last(callable|null $callback = null, $default = null)
+    public function last(?callable $callback = null, $default = null)
     {
         return $this->reverse()->first($callback, $default);
     }

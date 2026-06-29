@@ -1138,7 +1138,7 @@ class QueryBuilder
         return $this;
     }
 
-    public function upsert(array $values, array|null $update = null)
+    public function upsert(array $values, ?array $update = null)
     {
         if (!\is_array(reset($values))) {
             $values = [$values];
