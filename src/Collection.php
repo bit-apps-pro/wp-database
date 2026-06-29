@@ -3,9 +3,9 @@
 namespace BitApps\WPDatabase;
 
 use ArrayAccess;
+use ArrayIterator;
 use Countable;
 use IteratorAggregate;
-use ArrayIterator;
 use JsonSerializable;
 use ReturnTypeWillChange;
 
@@ -20,7 +20,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
 
     public static function make($items = [])
     {
-        return new static(is_array($items) ? $items : [$items]);
+        return new static(\is_array($items) ? $items : [$items]);
     }
 
     public function all()
@@ -46,7 +46,15 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     public function pluck($key)
     {
         return new static(array_map(function ($item) use ($key) {
-            return is_array($item) ? $item[$key] ?? null : (is_object($item) ? $item->{$key} ?? null : null);
+            if (\is_array($item)) {
+                return $item[$key] ?? null;
+            }
+
+            if ($item instanceof Model) {
+                return $item->getAttribute($key);
+            }
+
+            return \is_object($item) ? $item->{$key} ?? null : null;
         }, $this->items));
     }
 
@@ -74,7 +82,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     public function toArray()
     {
         return array_map(function ($value) {
-            return is_object($value) && method_exists($value, 'toArray') ? $value->toArray() : $value;
+            return \is_object($value) && method_exists($value, 'toArray') ? $value->toArray() : $value;
         }, $this->items);
     }
 
@@ -86,7 +94,7 @@ class Collection implements ArrayAccess, Countable, IteratorAggregate, JsonSeria
     #[ReturnTypeWillChange]
     public function count()
     {
-        return count($this->items);
+        return \count($this->items);
     }
 
     #[ReturnTypeWillChange]

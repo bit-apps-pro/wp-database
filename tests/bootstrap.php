@@ -120,3 +120,5 @@ require __DIR__ . '/Fixtures/User.php';
 require __DIR__ . '/Fixtures/SoftPost.php';
 require __DIR__ . '/Fixtures/EventUser.php';
 require __DIR__ . '/Fixtures/RetrieveUser.php';
+require __DIR__ . '/Fixtures/CastModel.php';
+require __DIR__ . '/Fixtures/AccessorModel.php';

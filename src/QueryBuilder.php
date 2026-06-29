@@ -116,6 +116,20 @@ class QueryBuilder
     }
 
     /**
+     * Adds casts to the bound model at runtime, keeping the builder chainable.
+     *
+     * @param array $casts
+     *
+     * @return $this
+     */
+    public function withCast(array $casts)
+    {
+        $this->_model->withCast($casts);
+
+        return $this;
+    }
+
+    /**
      * Sets alias for table
      *
      * @param string $_from
@@ -1204,7 +1218,7 @@ class QueryBuilder
 
         $this->bindings = [];
         $columns        = array_keys($values[0]);
-        ksort($columns);
+        sort($columns);
         $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps && !\in_array('created_at', $columns);
         if ($createdAt) {
             $columns[] = 'created_at';
@@ -1241,7 +1255,7 @@ class QueryBuilder
 
         $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
         $sql .= ' ON DUPLICATE KEY UPDATE ';
-        if (\array_key_exists('created_at', $update)) {
+        if (\in_array('created_at', $update, true)) {
             $update   = array_diff($update, ['created_at']);
             $update[] = 'updated_at';
         }

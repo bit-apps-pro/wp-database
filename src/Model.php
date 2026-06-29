@@ -574,6 +574,11 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return \boolval($value);
     }
 
+    private function castToBoolean($value)
+    {
+        return $this->castToBool($value);
+    }
+
     private function castToDate($value)
     {
         return DateTime::createFromFormat('Y-m-d H:i:s', $value);
