@@ -224,6 +224,9 @@ Contact::whereNotNull('email')->get();
 Contact::whereBetween('age', 18, 65)->get();
 Contact::orWhereBetween('score', 0, 50)->get();
 
+// LIKE — pass the operator explicitly; the value is bound safely via %s
+Contact::where('email', 'LIKE', '%@x.com')->get();
+
 // Raw
 Contact::whereRaw('YEAR(created_at) = %d', [2026])->get();
 Contact::orWhereRaw('email LIKE %s', ['%@x.com'])->get();
@@ -248,6 +251,10 @@ Contact::orderByRaw('FIELD(status, %s, %s)', ['new', 'open'])->get();
 Contact::groupBy('city')->having('city', '!=', '')->get();
 ```
 
+> A bare `desc()` or `asc()` call without a prior `orderBy()` defaults the order
+> column to the model's primary key — e.g. `Contact::desc()->get()` emits
+> `ORDER BY id DESC`.
+
 ### Joins
 
 ```php
@@ -257,6 +264,12 @@ Contact::query()
     ->get();
 // also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
 ```
+
+> **Joins are currently unreliable.** The join implementation has known bugs:
+> the joined table name is double-prefixed (`wp_wp_*`), ON-clause columns are not
+> adjusted when an alias is present, and `prepareOn` reuses the mutated column
+> value for the second-column lookup. Use raw SQL (`whereRaw` / `raw()`) until
+> these are fixed. See [Limitations](#limitations--known-issues).
 
 ### Limit / offset / pagination
 
@@ -278,9 +291,9 @@ $page = Contact::where('is_active', 1)->paginate($pageNo = 1, $perPage = 20);
 ### Aggregates
 
 ```php
-Contact::where('is_active', 1)->count();   // int|null
-Contact::max('score');                     // mixed
-Contact::min('score');                     // mixed
+Contact::where('is_active', 1)->count();   // int — always (returns 0, not null, on no rows)
+Contact::max('score');                     // mixed|null — null when the result set is empty
+Contact::min('score');                     // mixed|null — null when the result set is empty
 ```
 
 ### Inspecting the SQL
