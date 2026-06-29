@@ -433,31 +433,55 @@ Contact::query()->withCast(['is_active' => 'bool'])->get();
 Define relationships as methods on the model. The relation method returns a
 query for the related model.
 
-```php
-class Deal extends Model
-{
-    public function contact()
-    {
-        return $this->belongsTo(Contact::class, 'contact_id', 'id');
-    }
-}
+**Key convention:** `$foreignKey` is the column on the *related* model's table;
+`$localKey` is the column on the *calling* model's table. Always supply both
+explicitly when your column names differ from the ORM default
+(`{callerTable}_id` / `id`).
 
+```php
 class Contact extends Model
 {
     public function deals()
     {
+        // foreignKey='contact_id' lives on the deals table
+        // localKey='id' lives on the contacts table
+        // Generated predicate: WHERE deals.contact_id IN (SELECT id FROM contacts)
         return $this->hasMany(Deal::class, 'contact_id', 'id');
     }
 
     public function profile()
     {
+        // foreignKey='contact_id' on the profiles table
+        // localKey='id' on the contacts table
         return $this->hasOne(Profile::class, 'contact_id', 'id');
+    }
+}
+
+class Deal extends Model
+{
+    public function contact()
+    {
+        // Deal.contact_id references Contact.id
+        // foreignKey='id' lives on the contacts (related) table
+        // localKey='contact_id' lives on the deals (this) table
+        // Generated predicate: WHERE contacts.id IN (SELECT contact_id FROM deals)
+        return $this->belongsTo(Contact::class, 'id', 'contact_id');
     }
 }
 ```
 
+> **`hasOne` and `belongsTo` are identical.** `hasOne()` is a direct alias of
+> `belongsTo()` — both set the `oneToOne` relation type and return a single
+> model. There is no separate reverse-direction implementation; the direction is
+> determined entirely by the keys you provide and which model calls the method.
+
 Available: `hasOne()`, `hasMany()`, `belongsTo()`, `belongsToMany()` — each
 takes `($model, $foreignKey = null, $localKey = null)`.
+
+> **`belongsToMany` is non-functional for pivot tables.** The method is
+> declared but contains no pivot-table join logic. Calling it will not produce a
+> many-to-many query through an intermediate table. See
+> [Limitations](#limitations--known-issues).
 
 ### Eager loading
 
@@ -465,15 +489,15 @@ takes `($model, $foreignKey = null, $localKey = null)`.
 Contact::with('deals')->get();                   // load deals for each contact
 Contact::with(['deals', 'profile'])->get();      // multiple relations
 
-// Constrain the relation
+// Constrain the eager-loaded relation
 Contact::with('deals', function ($q) {
     $q->where('status', 'open');
 })->get();
 
-// Alias the loaded relation
+// Alias the loaded relation key on the result model
 Contact::with('deals as open_deals')->get();
 
-// Access after loading
+// Access loaded relations
 foreach (Contact::with('deals')->get() as $contact) {
     foreach ($contact->deals as $deal) { /* ... */ }
 }
@@ -484,12 +508,12 @@ foreach (Contact::with('deals')->get() as $contact) {
 ## Relation aggregates & existence
 
 ```php
-Contact::withCount('deals')->get();    // adds `deals_count`
-Contact::withSum('deals.amount')->get();
-Contact::withAvg('deals.amount')->get();
-Contact::withMin('deals.amount')->get();
-Contact::withMax('deals.amount')->get();
-Contact::withExists('deals')->get();   // adds bool-cast `deals_exists`
+Contact::withCount('deals')->get();           // adds `deals_count`
+Contact::withSum('deals.amount')->get();      // adds `deals_sum`
+Contact::withAvg('deals.amount')->get();      // adds `deals_avg`
+Contact::withMin('deals.amount')->get();      // adds `deals_min`
+Contact::withMax('deals.amount')->get();      // adds `deals_max`
+Contact::withExists('deals')->get();          // adds bool-cast `deals_exists`
 
 // Filter by relation existence
 Contact::whereHas('deals')->get();
@@ -499,8 +523,18 @@ Contact::whereHas('deals', fn ($q) => $q->where('status', 'open'))->get();
 Contact::withWhereHas('deals', fn ($q) => $q->where('status', 'open'))->get();
 ```
 
-Aggregate columns are aliased `<relation>_<function>` by default (e.g.
-`deals_count`); use `'deals as x'` to alias.
+Aggregate columns are aliased `<relation>_<function>` by default
+(e.g. `deals_count`, `deals_sum`). Pass `'relation as alias'` to use a custom
+column name:
+
+```php
+Contact::withCount('deals as total_deals')->get();   // adds `total_deals`
+Contact::withSum('deals.amount as revenue')->get();  // adds `revenue`
+```
+
+For `withMin`, `withMax`, `withAvg`, and `withSum` the column to aggregate must
+be specified as `'relation.column'`; passing just the relation name defaults to
+`*`, which is meaningful only for `withCount` and `withExists`.
 
 ---
 
