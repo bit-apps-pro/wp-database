@@ -135,7 +135,7 @@ $contact->first_name = 'Ada';
 $contact->email = 'ada@example.com';
 $saved = $contact->save();        // returns the saved Model on success, false on failure
 
-// Mass-create via insert()
+// Single-row insert — returns the created Model on success, false on failure
 $contact = Contact::insert([
     'first_name' => 'Ada',
     'email'      => 'ada@example.com',
@@ -156,21 +156,28 @@ it already exists. On success it returns the model; on failure, `false`.
 ## Reading records
 
 ```php
-Contact::find(1);                       // by primary key → single Model (or false)
-Contact::find(['email' => 'a@x.com']);  // by attributes
-Contact::findOne(['email' => 'a@x.com']);
+// find() applies WHERE conditions and returns a Collection — not a single Model
+Contact::find(1);                        // by PK → Collection (or [] if none)
+Contact::find(['email' => 'a@x.com']);   // by attributes → Collection
 
-Contact::first();                       // first row
-Contact::all();                         // all rows → Collection
-Contact::get();                         // all rows → Collection
-Contact::get(['id', 'email']);          // only some columns
+// Use findOne() or first() when you want exactly one Model back
+Contact::findOne(['email' => 'a@x.com']); // → single Model or []
+Contact::where('email', 'a@x.com')->first(); // → single Model or []
 
-Contact::where('is_active', 1)->get();  // filtered → Collection
+Contact::first();                        // first row → single Model or []
+Contact::all();                          // all rows → Collection
+Contact::get();                          // all rows → Collection
+Contact::get(['id', 'email']);           // only some columns
+
+Contact::where('is_active', 1)->get();   // filtered → Collection
 ```
 
-- A query returning **multiple** rows yields a [`Collection`](#collections).
-- A single-row read (e.g. `find` by PK, `first`) yields a `Model`.
-- An empty result yields `[]`.
+- `find()` sets WHERE conditions and calls `get()` — it always returns a **`Collection`**
+  (or `[]` when the result is empty, `false` on a database error). It does **not** return a
+  single Model, even when called with a single primary key.
+- For a single-row read use `findOne(['col' => $val])` or chain `->first()` on a builder.
+  Both call `LIMIT 1` internally and return a `Model` on success or `[]` on miss.
+- A query returning multiple rows returns a [`Collection`](#collections).
 
 ---
 
@@ -311,17 +318,18 @@ $contacts->count();
 ## Updating records
 
 ```php
-// On an existing model — updates dirty attributes only
-$contact = Contact::find(1);
+// On an existing model — set attributes then save; returns Model or false
+$contact = Contact::findOne(['id' => 1]);
 $contact->email = 'new@x.com';
-$contact->save();
+$contact->save();        // returns the Model on success, false on failure
 
-// Conditional bulk update — executes immediately
+// Conditional bulk update — executes immediately, returns int (rows affected) or false
 Contact::where('is_active', 0)->update(['status' => 'archived']);
 ```
 
-> `update()` executes immediately (it is not chainable). Set conditions
-> **before** calling it.
+> `update()` on a builder executes immediately (it is not chainable). Set conditions
+> **before** calling it. When updating a model instance through `save()`, the return
+> value is the `Model` on success or `false` on failure.
 
 ---
 
@@ -330,7 +338,7 @@ Contact::where('is_active', 0)->update(['status' => 'archived']);
 ```php
 Contact::where('id', 1)->delete();         // DELETE ... WHERE id = 1
 
-$contact = Contact::find(1);
+$contact = Contact::findOne(['id' => 1]);
 $contact->delete();                        // deletes that row
 
 Contact::destroy([1, 2, 3]);               // delete by primary keys
@@ -340,7 +348,8 @@ Contact::destroy([1, 2, 3]);               // delete by primary keys
   `RuntimeException('SQL query is empty')` — a guard against wiping the table.
   Use a raw `TRUNCATE` if you really mean to empty it.
 - With `$soft_deletes = true`, `delete()` sets `deleted_at` instead of removing
-  the row.
+  the row. **Reads are not filtered** — soft-deleted rows are returned by `all()`
+  and every query; there is no automatic scope. See [Limitations](#limitations--known-issues).
 
 ---
 
@@ -361,6 +370,15 @@ Contact::query()->upsert([
     ['email' => 'b@x.com', 'first_name' => 'Bob'],
 ]);
 ```
+
+> **MySQL only** — `upsert()` emits `INSERT … ON DUPLICATE KEY UPDATE` and will not
+> work on other databases.
+>
+> **`updated_at` quirk** — when `updated_at` is in the conflict-update set, the
+> generated SQL maps `updated_at = VALUES(created_at)` rather than
+> `VALUES(updated_at)`. This is a known implementation detail; the timestamp will
+> reflect the value written to `created_at` at insert time, not a separate
+> `updated_at` value. See [Limitations](#limitations--known-issues).
 
 ---
 
