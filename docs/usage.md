@@ -27,6 +27,7 @@ required — every method used in this guide is documented in full here.
 - [Schema builder](#schema-builder)
 - [Static vs instance calls (IDE notes)](#static-vs-instance-calls-ide-notes)
 - [Breaking changes](#breaking-changes)
+- [Limitations & known issues](#limitations--known-issues)
 
 ---
 
@@ -542,7 +543,7 @@ be specified as `'relation.column'`; passing just the relation name defaults to
 
 Models fire lifecycle events. Register handlers in a static `boot()` using the
 event registrars. A pre-event (`saving`, `updating`, `deleting`) that returns
-`false` aborts the operation.
+`false` aborts the operation. `saving`/`saved` fire on both insert and update.
 
 ```php
 class Contact extends Model
@@ -555,7 +556,7 @@ class Contact extends Model
             }
         });
 
-        static::created(fn ($model) => Log::info("created {$model->id}"));
+        static::saved(fn ($model) => Log::info("saved {$model->id}"));
 
         // A handler can also be a class with a handle() method
         static::deleted(SyncDeletion::class);
@@ -563,8 +564,17 @@ class Contact extends Model
 }
 ```
 
-Events: `booting`, `booted`, `retrieved`, `saving`, `saved`, `creating`,
-`created`, `updating`, `updated`, `deleting`, `deleted`.
+**Subscribable events** (registered via Closure using the methods below):
+`retrieved`, `saving`, `saved`, `updating`, `updated`, `deleting`, `deleted`.
+
+**Boot hooks** — override these protected static methods instead of registering
+a Closure: `booting()` (runs before `boot()`), `booted()` (runs after `boot()`).
+The `boot()` method itself is the standard entry point for registering event
+handlers.
+
+> `creating`/`created` events fire internally but have no public registrar —
+> they cannot be subscribed via `static::creating(...)` / `static::created(...)`.
+> Use `saving`/`saved` instead, which fire on both insert and update.
 
 > The `HasEvents` trait reserves the method names `boot`, `booting`, `booted`,
 > `fireEvent`, `fireCustomEvent`, `registerEvent` and the properties `$events`,
@@ -615,77 +625,17 @@ table prefix is applied automatically.
 use BitApps\WPDatabase\Schema;
 
 Schema::create('contacts', function ($table) {
-    $table->id();                                   // BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
-    $table->string('email');                        // VARCHAR(255)
-    $table->string('first_name')->nullable();
-    $table->int('age')->unsigned()->defaultValue(0);
-    $table->text('bio')->nullable();
-    $table->bool('is_active')->defaultValue(1);
-    $table->json('meta')->nullable();
-
-    $table->unique('email');                        // unique index
-    $table->unique(['first_name', 'last_name']);    // composite unique
-    $table->index();                                // index last column
-
-    $table->timestamps();                           // created_at + updated_at
-    $table->softDeletes();                          // deleted_at
-});
-```
-
-### Column types
-
-`char`, `varchar`, `json`, `binary`, `varbinary`, `tinyblob`, `tinytext`,
-`text`, `blob`, `mediumtext`, `mediumblob`, `longtext`, `longblob`, `enum`,
-`set`, `bit`, `tinyint`, `bool`/`boolean`, `smallint`, `mediumint`,
-`int`/`integer`, `bigint`, `float`, `double`, `double_precision`, `decimal`/
-`dec`, `date`, `datetime`, `timestamp`, `time`, `year`. Helpers: `id()`,
-`increments()`, `string()`, `timestamps()`, `softDeletes()`.
-
-### Column modifiers
-
-```php
-$table->int('views')->unsigned()->zeroFill();
-$table->string('slug')->nullable()->defaultValue('');
-$table->bigint('user_id')->primary();
-$table->decimal('price')->length([10, 2]);
-```
-
-`nullable()`, `defaultValue($v)`, `unsigned()`, `zeroFill()`, `primary()`,
-`unique($column = null)`, `index($type = null)`, `length($n)`.
-
-### Foreign keys
-
-```php
-Schema::create('deals', function ($table) {
     $table->id();
-    $table->bigint('contact_id')->unsigned();
-    $table->foreign('contacts', 'id')->onDelete()->cascade();
-    // FK on the previously-defined column (contact_id) → contacts(id)
+    $table->string('email');
+    $table->string('first_name')->nullable();
+    $table->bool('is_active')->defaultValue(1);
+    $table->timestamps();
 });
 ```
 
-`foreign($referencedTable, $referencedColumn)` applies to the **last defined
-column**, then one of `cascade()`, `restrict()`, `setNull()`, optionally scoped
-by `onDelete()` / `onUpdate()`.
-
-### Altering & dropping
-
-```php
-Schema::drop('contacts');
-Schema::rename('contacts', 'people');
-
-Schema::edit('contacts', function ($table) {
-    $table->string('phone')->nullable();   // ADD COLUMN
-    $table->dropColumn('bio');
-    $table->dropTimestamps();
-    $table->dropIndex(['email_UNIQUE']);
-    $table->dropForeign(['fk_name']);
-    $table->dropPrimary();
-});
-
-// Scope to a custom prefix
-Schema::withPrefix('wp_other_')->create('logs', function ($table) { /* ... */ });
-```
+For the full reference — column types, modifiers, foreign keys, `Schema::edit`,
+`Schema::drop`, `Schema::rename`, and prefix scoping — see
+[Schema builder reference](schema.md).
 
 ---
 
@@ -714,3 +664,48 @@ If you are upgrading, read [breaking-changes.md](breaking-changes.md) — it
 covers the `Collection` return type, `update()`/`save()` behavior, `select()`
 quoting, the `delete()`-without-WHERE guard, null casting, and the relation
 method relocation.
+
+---
+
+## Limitations & known issues
+
+- **Joins are broadly unreliable.** The `prepareOn()` helper double-prefixes
+  table names (`wp_wp_*`) when a plugin prefix is set, and ON-clause columns
+  are not prefixed at all. The mutated column name is also reused on subsequent
+  calls. Workaround: write raw JOIN clauses via `raw()` and apply your own
+  prefix via `Connection::getPrefix()`.
+
+- **`belongsToMany` is declared but non-functional.** The method exists but
+  contains no pivot-table join logic. Calling it does not produce a
+  many-to-many query through an intermediate table. Workaround: model the pivot
+  as an explicit intermediate model with `hasMany` on each side.
+
+- **`belongsTo` and `hasOne` are the same alias; key naming is reversed from
+  Laravel.** Both set the same `oneToOne` relation. The `$foreignKey` argument
+  is the column on the **related** table and `$localKey` is the column on the
+  **calling** model's table — the opposite of Laravel's convention. Ensure you
+  supply both arguments explicitly to avoid confusion.
+
+- **Soft delete is write-only.** `softDeletes()` adds a `deleted_at` column and
+  `delete()` sets it, but there is no global scope to filter soft-deleted rows
+  from queries. Every `get()` / `find()` returns soft-deleted rows alongside
+  live ones. Workaround: add `->whereNull('deleted_at')` to every read query.
+
+- **`upsert` is MySQL-only.** It generates `INSERT … ON DUPLICATE KEY UPDATE`,
+  which is not portable to other databases. Additionally, the generated SQL sets
+  `updated_at = VALUES(created_at)` instead of `VALUES(updated_at)`, so the
+  timestamp may be wrong on update. Workaround: use separate `insert` + `update`
+  calls where portability or correct timestamps are required.
+
+- **`creating`/`created` events cannot be subscribed.** These event names fire
+  internally during `insert()` but `HasEvents` provides no registrar methods for
+  them. Calling `static::creating(fn ...)` or `static::created(fn ...)` in
+  `boot()` will throw a fatal error. Use `saving`/`saved` instead — they fire
+  on both insert and update.
+
+- **Bulk `insert()` may return a bare array, not a `Collection`.** When the
+  post-insert re-query that hydrates the inserted rows fails, the fallback path
+  returns a plain PHP array of IDs rather than a `Collection`. Code that calls
+  Collection methods on the return value of `insert()` will break in that case.
+  Workaround: check `is_array()` on the result or use `Collection::make()` to
+  wrap it defensively.
