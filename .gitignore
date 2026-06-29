@@ -5,3 +5,4 @@ tests.config.php
 .phpunit.cache/
 phpunit.phar
 composer.lock
+.superpowers/
