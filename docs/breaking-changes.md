@@ -37,7 +37,8 @@ API and runtime behavior change, it is a **major** version bump.
 ### 2.1 `Model::get()` / query results return a `Collection`, not an `array`
 
 Multi-row reads now return `BitApps\WPDatabase\Collection` instead of a plain
-PHP array. Single-row reads still return the model; empty results return `[]`.
+PHP array. `find()` always returns a `Collection` (even for a single PK); use
+`findOne()` or `->first()` for a single model. Empty results return `[]`.
 
 ```php
 // Before
@@ -333,9 +334,10 @@ Relation names support an `as` alias: `withCount('posts as total_posts')`.
 
 ### 4.3 Model events (`HasEvents` trait)
 
-Lifecycle hooks: `booting`, `booted`, `retrieved`, `saving`, `saved`,
-`updating`, `updated`, `deleting`, `deleted`. Register in a model's `boot()`
-via the protected static registrars, e.g.:
+**Subscribable events** — register in a model's `boot()` via the named static
+registrars: `retrieved`, `saving`, `saved`, `updating`, `updated`, `deleting`,
+`deleted`. **Boot hooks** — override the protected static methods `booting()`
+(runs before `boot()`) and `booted()` (runs after) instead of using a registrar.
 
 ```php
 protected static function boot()
@@ -346,6 +348,9 @@ protected static function boot()
 ```
 
 A pre-event (`saving`/`updating`/`deleting`) returning `false` aborts the query.
+
+> `creating`/`created` events fire internally but have no public registrar —
+> use `saving`/`saved` instead, which fire on both insert and update.
 
 > ⚠️ The trait **reserves** the method names `boot`, `booting`, `booted`,
 > `fireEvent`, `fireCustomEvent`, `registerEvent` and the properties `$events`,
