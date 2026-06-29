@@ -117,3 +117,6 @@ $GLOBALS['wpdb'] = new FakeWpdb();
 require __DIR__ . '/../vendor/autoload.php';
 require __DIR__ . '/Fixtures/Post.php';
 require __DIR__ . '/Fixtures/User.php';
+require __DIR__ . '/Fixtures/SoftPost.php';
+require __DIR__ . '/Fixtures/EventUser.php';
+require __DIR__ . '/Fixtures/RetrieveUser.php';
