@@ -4,6 +4,10 @@ A small ActiveRecord ORM + fluent query/schema builder on top of WordPress'
 `$wpdb`. Models map to tables, queries are built fluently, results come back as
 hydrated model objects inside a `Collection`.
 
+Intended audience: WordPress plugin developers comfortable with PHP and Composer.
+The API is modelled on Eloquent's; prior Eloquent experience is helpful but not
+required — every method used in this guide is documented in full here.
+
 - [Install](#install)
 - [Setup](#setup)
 - [Defining models](#defining-models)
@@ -91,7 +95,7 @@ class Contact extends Model
 {
     protected $table = 'contacts';   // optional; default derived from class name
     protected $primaryKey = 'id';    // default 'id'
-    protected $prefix = '';          // per-model extra prefix (default plugin prefix)
+    protected $prefix = '';          // overrides the plugin prefix when non-empty
 
     public $timestamps = true;       // auto-maintain created_at / updated_at
 
@@ -104,20 +108,21 @@ class Contact extends Model
         'is_active' => 'bool',
     ];
 
-    // Enable soft deletes (requires a deleted_at column).
+    // Soft deletes: delete() sets deleted_at instead of removing the row.
+    // NOTE: reads are NOT filtered — soft-deleted rows appear in all() and every query.
     public $soft_deletes = true;
 }
 ```
 
 | Property | Purpose |
 |---|---|
-| `$table` | Table name (without prefix). Auto-derived if unset. |
+| `$table` | Table name (without prefix). Auto-derived from the class name (pluralised, snake_cased) if unset. |
 | `$primaryKey` | Primary key column (default `id`). |
-| `$prefix` | Extra per-model prefix. |
-| `$fillable` | Mass-assignment allow-list. Unset = allow all. |
-| `$casts` | Map of column → cast type. |
-| `$timestamps` | Auto-set `created_at`/`updated_at` (default `true`). |
-| `$soft_deletes` | `delete()` sets `deleted_at` instead of removing the row. |
+| `$prefix` | When non-empty, **replaces** the plugin prefix for this model only. Table resolves to `$wpdb->prefix . $prefix . $tableName`. Leave empty (the default) to use the plugin prefix set via `Connection::setPluginPrefix()`. |
+| `$fillable` | Mass-assignment allow-list. Unset = allow all non-timestamp, non-PK attributes. |
+| `$casts` | Map of column → cast type. See [Attribute casting](#attribute-casting). |
+| `$timestamps` | Auto-set `created_at`/`updated_at` on insert/update (declared `true` in the base `Model`; set to `false` to disable). Requires the columns to exist — see [`timestamps()` in `docs/schema.md`](schema.md#timestamps). |
+| `$soft_deletes` | Must be declared `true` on the model. `delete()` then sets `deleted_at` instead of removing the row. **Reads are not filtered** — soft-deleted rows are returned by `all()` and every query. See [Limitations](#limitations--known-issues) and [`softDeletes()` in `docs/schema.md`](schema.md#softdeletes). |
 
 ---
 
