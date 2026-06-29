@@ -5,8 +5,9 @@
  * relation aggregates. Kept separate from core query building (SRP).
  */
 
-namespace BitApps\WPDatabase;
+namespace BitApps\WPDatabase\Concerns;
 
+use BitApps\WPDatabase\QueryBuilder;
 use Closure;
 
 if (!\defined('ABSPATH')) {

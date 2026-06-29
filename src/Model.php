@@ -8,8 +8,10 @@ namespace BitApps\WPDatabase;
 
 use ArrayAccess;
 
-use DateTime;
+use BitApps\WPDatabase\Concerns\HasEvents;
 
+use BitApps\WPDatabase\Concerns\Relations;
+use DateTime;
 use JsonSerializable;
 use ReturnTypeWillChange;
 use RuntimeException;

@@ -4,7 +4,7 @@
  * Class For Database Relations.
  */
 
-namespace BitApps\WPDatabase;
+namespace BitApps\WPDatabase\Concerns;
 
 use Closure;
 

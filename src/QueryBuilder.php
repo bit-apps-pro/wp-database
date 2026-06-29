@@ -2,8 +2,9 @@
 
 namespace BitApps\WPDatabase;
 
-use Closure;
+use BitApps\WPDatabase\Concerns\QueriesRelationships;
 
+use Closure;
 use DateTime;
 use DateTimeZone;
 use RuntimeException;

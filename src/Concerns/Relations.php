@@ -4,8 +4,10 @@
  * Class For Database Relations.
  */
 
-namespace BitApps\WPDatabase;
+namespace BitApps\WPDatabase\Concerns;
 
+use BitApps\WPDatabase\Model;
+use BitApps\WPDatabase\QueryBuilder;
 use Closure;
 
 if (!\defined('ABSPATH')) {
