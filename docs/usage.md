@@ -618,8 +618,9 @@ Placeholders use `$wpdb` conventions (`%d`, `%s`, `%f`) with the bindings array.
 
 ## Schema builder
 
-Use `Schema` (a facade over `Blueprint`) to create, alter and drop tables. The
-table prefix is applied automatically.
+Use `Schema` (a facade over `Blueprint`) to create, alter and drop tables. By
+default the table name is used as-is — call `Schema::withPrefix($prefix)` to
+apply a prefix.
 
 ```php
 use BitApps\WPDatabase\Schema;
@@ -669,10 +670,12 @@ method relocation.
 
 ## Limitations & known issues
 
-- **Joins are broadly unreliable.** The `prepareOn()` helper double-prefixes
-  table names (`wp_wp_*`) when a plugin prefix is set, and ON-clause columns
-  are not prefixed at all. The mutated column name is also reused on subsequent
-  calls. Workaround: write raw JOIN clauses via `raw()` and apply your own
+- **Joins are broadly unreliable.** `join()` in `QueryBuilder` always prepends
+  `Connection::wpPrefix()` (plus the model prefix) onto the supplied table name,
+  causing a double prefix (`wp_wp_*`) unconditionally — not only when a plugin
+  prefix is set. Separately, `prepareOn()` reuses the mutated column value for the
+  second-column lookup, and ON-clause columns are not adjusted when an alias is
+  present. Workaround: write raw JOIN clauses via `raw()` and apply your own
   prefix via `Connection::getPrefix()`.
 
 - **`belongsToMany` is declared but non-functional.** The method exists but
@@ -709,3 +712,12 @@ method relocation.
   Collection methods on the return value of `insert()` will break in that case.
   Workaround: check `is_array()` on the result or use `Collection::make()` to
   wrap it defensively.
+
+- **Schema builder does not auto-apply the table prefix.** `Schema::$prefix`
+  defaults to `null`, not `''`; table names are used as-is unless you call
+  `Schema::withPrefix()` explicitly. See [Schema builder reference](schema.md).
+
+- **`change()` column modifier is broken: emits malformed `ADD COLUMN CHANGE COLUMN …`
+  SQL.** The `addColumnQuery()` method prepends `ADD COLUMN` in edit mode and also
+  prepends `CHANGE COLUMN` when the `change` flag is set, producing invalid SQL.
+  Avoid `change()` in production until this is fixed.

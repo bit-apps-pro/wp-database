@@ -1,8 +1,8 @@
 # Schema Builder Reference
 
 Use `Schema` (a thin facade over `Blueprint`) to create, alter and drop MySQL tables from
-PHP. The table prefix (WordPress prefix + plugin prefix) is applied automatically — pass
-bare table names everywhere.
+PHP. By default the table name is used as-is (no prefix is applied); call
+`Schema::withPrefix($prefix)` to apply one.
 
 See [Defining models](usage.md#defining-models) for the model-side `$timestamps` and
 `$soft_deletes` properties that rely on the columns described here.
@@ -36,14 +36,12 @@ use BitApps\WPDatabase\Schema;
 
 Schema::create('orders', function ($table) {
     $table->id();
-    $table->bigint('user_id')->unsigned();
-    $table->varchar('status', 32)->defaultValue('pending');
-    $table->decimal('total')->nullable();
-    $table->timestamps();
-
     $table->bigint('user_id')->unsigned()
         ->foreign('users', 'id')
         ->onDelete()->cascade();
+    $table->varchar('status', 32)->defaultValue('pending');
+    $table->decimal('total')->nullable();
+    $table->timestamps();
 });
 ```
 
@@ -267,10 +265,18 @@ Schema::edit('orders', function ($table) {
 });
 ```
 
+> ⚠️ **Known bug:** `change()` currently emits malformed SQL (`ADD COLUMN CHANGE COLUMN …`)
+> because `addColumnQuery()` unconditionally prepends `ADD COLUMN` in edit mode and then
+> also prepends `CHANGE COLUMN` when the `change` flag is set. Do not rely on `change()`
+> in production until this is fixed.
+
 ### Drop helpers
 
-The following can be called inside a `Schema::edit` callback or as a direct static call
-(e.g. `Schema::dropColumn('orders', 'legacy_notes')`).
+Only `dropColumn` and `renameColumn` produce complete SQL when called as a direct static
+call (e.g. `Schema::dropColumn('orders', 'legacy_notes')`). The remaining helpers —
+`dropTimestamps`, `dropIndex`, `dropUnique`, `dropForeign`, and `dropPrimary` — must be
+used inside a `Schema::edit()` callback; a direct static call only emits the
+`ALTER TABLE` header with no `DROP` clause.
 
 | Method | Emitted SQL |
 |---|---|
@@ -286,7 +292,8 @@ The following can be called inside a `Schema::edit` callback or as a direct stat
 ```php
 // Direct call — renames a single column on the table
 Schema::renameColumn('orders', 'fname', 'first_name');
-// Emits: ALTER TABLE wp_orders CHANGE fname first_name
+// Emits: ALTER TABLE `orders` CHANGE fname first_name
+// (wp_ prefix appears only if withPrefix was used, e.g. Schema::withPrefix('wp_')->renameColumn(...))
 ```
 
 Renames a column via MySQL's `CHANGE` clause. Note that this implementation emits
@@ -310,10 +317,31 @@ on `(new Schema())->create(...)` — both are equivalent thanks to `__callStatic
 | `Schema::withPrefix($prefix)` | Overrides the automatic prefix for this call. Returns a `Schema` instance; chain `.create()`, `.edit()`, etc. |
 
 ```php
-// Override prefix — table resolves as "custom_orders", not "wp_plugin_orders"
+// Override prefix — table resolves as "custom_orders"
+// (without withPrefix, the bare name "orders" is used — no prefix is applied automatically)
 Schema::withPrefix('custom_')->create('orders', function ($table) {
     $table->id();
     $table->string('reference');
     $table->timestamps();
 });
 ```
+
+---
+
+## Limitations & known issues
+
+- **Schema builder does not auto-apply the table prefix.** `Schema::$prefix` defaults to
+  `null`, not `''`; no prefix is prepended unless you call `Schema::withPrefix()` first.
+  To use the WordPress prefix, pass it explicitly:
+  `Schema::withPrefix($wpdb->prefix)->create(...)`.
+
+- **`change()` is broken — emits malformed SQL.** `addColumnQuery()` prepends
+  `ADD COLUMN` for every column in edit mode, then also prepends `CHANGE COLUMN` when the
+  `change` flag is set, producing `ADD COLUMN CHANGE COLUMN …`. Avoid `change()` in
+  production until this is fixed.
+
+- **`dropTimestamps()`, `dropIndex()`, `dropUnique()`, `dropForeign()`, `dropPrimary()`
+  must be used inside a `Schema::edit()` callback.** A direct static call (e.g.
+  `Schema::dropTimestamps('orders')`) only sets the `ALTER TABLE` header and emits no
+  `DROP` clause, producing a syntax error. Only `dropColumn()` and `renameColumn()`
+  produce complete SQL when called directly.
