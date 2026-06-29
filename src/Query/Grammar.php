@@ -11,10 +11,11 @@ if (!\defined('ABSPATH')) {
 /**
  * Compiles the SELECT side of a {@see QueryBuilder} into an SQL string.
  *
- * Stateless collaborator: every method receives the QueryBuilder first, reads
- * its state through public getters and pushes any placeholders back onto the
- * builder via {@see QueryBuilder::addBindings()}. The builder owns the bindings;
- * the grammar only produces the SQL.
+ * Holds no state of its own: every method receives the QueryBuilder first and
+ * reads its state through getters. It does drive the builder's binding lifecycle
+ * while compiling — resetting (including nested builders) and repopulating
+ * bindings in placeholder order via {@see QueryBuilder::addBindings()} — so the
+ * resulting binding array lines up with the emitted placeholders.
  */
 class Grammar
 {
@@ -86,7 +87,7 @@ class Grammar
      *
      * @return string
      */
-    public function processConditions(QueryBuilder $query, $conditions, $type = null)
+    private function processConditions(QueryBuilder $query, $conditions, $type = null)
     {
         $sql = '';
         if (\is_array($conditions) && \count($conditions) > 0) {
@@ -130,7 +131,7 @@ class Grammar
      *
      * @return string
      */
-    public function getConditions(QueryBuilder $query, $type = 'where')
+    private function getConditions(QueryBuilder $query, $type = 'where')
     {
         return $this->processConditions($query, $query->getClauseList($type), $type);
     }
@@ -140,7 +141,7 @@ class Grammar
      *
      * @return string
      */
-    public function getGroupBy(QueryBuilder $query)
+    private function getGroupBy(QueryBuilder $query)
     {
         $groupBy = $query->getGroupByList();
         if (empty($groupBy)) {
@@ -155,7 +156,7 @@ class Grammar
      *
      * @return string
      */
-    public function getHaving(QueryBuilder $query)
+    private function getHaving(QueryBuilder $query)
     {
         $sql = $this->getConditions($query, 'having');
         if (empty($sql)) {
@@ -170,7 +171,7 @@ class Grammar
      *
      * @return string
      */
-    public function getOrderBy(QueryBuilder $query)
+    private function getOrderBy(QueryBuilder $query)
     {
         $sql     = '';
         $orderBy = $query->getOrderByList();
@@ -195,7 +196,7 @@ class Grammar
      *
      * @return string|null
      */
-    public function getFrom(QueryBuilder $query)
+    private function getFrom(QueryBuilder $query)
     {
         $alias = $query->getFromAlias();
 
@@ -207,7 +208,7 @@ class Grammar
      *
      * @return string
      */
-    public function getLimit(QueryBuilder $query)
+    private function getLimit(QueryBuilder $query)
     {
         $limit = $query->getLimitValue();
 
@@ -219,7 +220,7 @@ class Grammar
      *
      * @return string
      */
-    public function getOffset(QueryBuilder $query)
+    private function getOffset(QueryBuilder $query)
     {
         $limit  = $query->getLimitValue();
         $offset = $query->getOffsetValue();
@@ -232,7 +233,7 @@ class Grammar
      *
      * @return string
      */
-    public function prepareRawSelect(QueryBuilder $query)
+    private function prepareRawSelect(QueryBuilder $query)
     {
         $sql = '';
         if (!empty($query->selectRaw['columns'])) {
@@ -254,7 +255,7 @@ class Grammar
      *
      * @return string|null
      */
-    public function prepareColumnForWhere(QueryBuilder $query, $clause)
+    private function prepareColumnForWhere(QueryBuilder $query, $clause)
     {
         if (isset($clause['column'])) {
             return ' ' . $query->prepareColumnName($clause['column']);
@@ -268,7 +269,7 @@ class Grammar
      *
      * @return string
      */
-    public function prepareOperatorForWhere($clause)
+    private function prepareOperatorForWhere($clause)
     {
         $sql = '';
         if (!isset($clause['column'])) {
@@ -295,7 +296,7 @@ class Grammar
      *
      * @return string
      */
-    public function prepareValueForWhere(QueryBuilder $query, $clause)
+    private function prepareValueForWhere(QueryBuilder $query, $clause)
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
@@ -334,7 +335,7 @@ class Grammar
      *
      * @return string
      */
-    public function removeLeadingBool($sql)
+    private function removeLeadingBool($sql)
     {
         return preg_replace('/and |or /i', '', $sql, 1);
     }

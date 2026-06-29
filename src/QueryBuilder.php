@@ -224,26 +224,6 @@ class QueryBuilder
     }
 
     /**
-     * Returns the query method (select/insert/update/delete/raw).
-     *
-     * @return string|null
-     */
-    public function getMethod()
-    {
-        return $this->_method;
-    }
-
-    /**
-     * Returns the raw SQL set for a raw query.
-     *
-     * @return string
-     */
-    public function getRawSql()
-    {
-        return $this->raw;
-    }
-
-    /**
      * Returns the clause list (where/having) for the given type.
      *
      * @param string $type
@@ -252,7 +232,7 @@ class QueryBuilder
      */
     public function getClauseList($type)
     {
-        return $this->{$type};
+        return $type === 'having' ? $this->having : $this->where;
     }
 
     /**
@@ -1167,6 +1147,7 @@ class QueryBuilder
      */
     public function toSql()
     {
+        $sql = '';
         if (isset($this->_method)) {
             switch ($this->_method) {
                 case self::SELECT:
