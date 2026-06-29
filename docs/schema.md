@@ -230,7 +230,7 @@ $table->bigint('user_id')->unsigned()
 
 | Method | Description |
 |---|---|
-| `foreign($ref, $refCol)` | Declares a `FOREIGN KEY` from the current column to column `$refCol` on table `$ref`. The prefix is applied to `$ref` automatically. |
+| `foreign($ref, $refCol)` | Declares a `FOREIGN KEY` from the current column to column `$refCol` on table `$ref`. `$ref` is used as-is — pass the full (already-prefixed) table name; no prefix is applied. |
 | `onDelete()` | Selects the `ON DELETE` slot for the next action modifier. |
 | `onUpdate()` | Selects the `ON UPDATE` slot for the next action modifier. |
 | `cascade()` | Applies `CASCADE`. If `onDelete()` or `onUpdate()` was called first, only that slot is set; otherwise both `ON DELETE` and `ON UPDATE` are set to `CASCADE`. |
@@ -313,8 +313,8 @@ on `(new Schema())->create(...)` — both are equivalent thanks to `__callStatic
 | `Schema::create($table, Closure $callback)` | `CREATE TABLE IF NOT EXISTS`. The callback receives the `Blueprint`. |
 | `Schema::edit($table, Closure $callback)` | `ALTER TABLE`. Use to add columns, drop columns, add/drop indexes and foreign keys. |
 | `Schema::drop($table)` | `DROP TABLE IF EXISTS`. |
-| `Schema::rename($table, $newName)` | `ALTER TABLE … RENAME TO`. The prefix is applied to both names. |
-| `Schema::withPrefix($prefix)` | Overrides the automatic prefix for this call. Returns a `Schema` instance; chain `.create()`, `.edit()`, etc. |
+| `Schema::rename($table, $newName)` | `ALTER TABLE … RENAME TO`. Both names are used as-is unless `Schema::withPrefix()` is used (no prefix by default). |
+| `Schema::withPrefix($prefix)` | Sets the prefix applied for this call (there is no prefix by default). Returns a `Schema` instance; chain `.create()`, `.edit()`, etc. |
 
 ```php
 // Override prefix — table resolves as "custom_orders"
