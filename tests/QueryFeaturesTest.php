@@ -145,4 +145,16 @@ final class QueryFeaturesTest extends TestCase
         $this->assertMatchesRegularExpression('/SET\s+status\s*=/i', $sql);
         $this->assertStringContainsString('WHERE', $sql);
     }
+
+    // --- LIKE operator (case-insensitive) ------------------------------------
+
+    public function testLikeOperatorBindsValue(): void
+    {
+        $qb = User::where('name', 'like', '%ada%');
+
+        $sql = $qb->toSql();
+
+        $this->assertMatchesRegularExpression('/like\s+%s/i', $sql);
+        $this->assertSame(['%ada%'], $qb->getBindings(), 'LIKE value must be bound, not concatenated');
+    }
 }

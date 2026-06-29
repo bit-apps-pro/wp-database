@@ -317,7 +317,7 @@ class Grammar
             $sql = rtrim($sql, ',') . ')';
         } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') !== false) {
             $sql .= ' ' . $clause['value'];
-        } elseif (isset($clause['operator']) && strtoupper($clause['operator'] === 'LIKE')) {
+        } elseif (isset($clause['operator']) && strtoupper($clause['operator']) === 'LIKE') {
             $sql .= ' %s';
             $query->addBindings($clause['value']);
         } elseif (!\is_null($clause['value'])) {
