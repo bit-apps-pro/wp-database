@@ -286,7 +286,7 @@ Not signature breaks, but observable runtime differences.
 
 - **`count()` now counts the primary key** (`COUNT(pk)`) via the new
   `aggregate()` helper, instead of `COUNT(*)`. Rows with a NULL primary key are
-  no longer counted.
+  no longer counted. Returns `int`; a real `0` is preserved (not coerced to `null`).
 - **`min()` / `max()` run on a clone** of the builder, so calling them no longer
   mutates the current query's `select`/`selectRaw` state.
 - **Bulk insert id collection fixed** — inserted ids are now derived from
@@ -299,6 +299,9 @@ Not signature breaks, but observable runtime differences.
   count no longer conflict.
 - **`Model` now fires lifecycle events** during read/write — see §4.3. A model
   with custom logic in overridden write paths may observe new event callbacks.
+- **Internal layout:** the three traits moved to `BitApps\WPDatabase\Concerns`
+  and SELECT compilation extracted to `BitApps\WPDatabase\Query\Grammar`. Public
+  classes are unchanged; only code importing those internals directly is affected.
 
 ---
 
@@ -386,10 +389,10 @@ User::query()->with('posts')->where('active', 1)->get();
 ### 4.5 Other additions
 
 - **QueryBuilder:** `addSelect()`, `selectRaw()`, `orderByRaw()`, `upsert()`,
-  `when()`, `toSql()`, `clone()`, `aggregate()`, `prepareColumnName()`, and
-  `__call()` forwarding to the bound model.
+  `when()`, `toSql()`, `clone()`, `aggregate()`, `prepareColumnName()`,
+  `withCast()` (chainable), and `__call()` forwarding to the bound model.
 - **Model:** `query()` (canonical static builder entry), `toArray()`,
-  `getPrefix()`, `withCast(array $casts)`, `bool` cast.
+  `getPrefix()`, `withCast(array $casts)`, `bool`/`boolean` cast.
 - **Connection:** `startTransaction()`, `commit()`, `rollback()`.
 - **Blueprint:** `unique($column = null)` — optional arg (backward compatible)
   for composite/explicit unique indexes.
