@@ -79,7 +79,7 @@ use RuntimeException;
  * @method static QueryBuilder                  withExists(string|array $relation)
  * @method static QueryBuilder                  whereHas(string|array $relation, ?Closure $callback = null)
  * @method static QueryBuilder                  withWhereHas(string|array $relation, ?Closure $callback = null)
- * @method static int|null                      count()
+ * @method static int                           count()
  * @method static mixed                         max($column)
  * @method static mixed                         min($column)
  * @method static bool|string                   delete()
@@ -386,11 +386,11 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
         $this->retrieveRelateData($this->getQueryBuilder());
         if (\count($result) == 1 && $setAttribute) {
-            $this->fireEvent('retrieved');
             $this->fill((array) $result[0], true);
             $this->setExists(true);
             $this->setRelatedData($this);
             $this->setExists(true);
+            $this->fireEvent('retrieved');
 
             return $this;
         }

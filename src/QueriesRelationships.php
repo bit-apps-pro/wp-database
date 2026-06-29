@@ -111,8 +111,11 @@ trait QueriesRelationships
     /**
      * Adds an aggregate sub query for the given relation(s) to this query.
      *
+     * The aggregated column may be expressed inline as `relation.column`
+     * (e.g. `withSum('posts.amount')`); otherwise the `$column` fallback is used.
+     *
      * @param string|array $relation
-     * @param mixed        $column
+     * @param mixed        $column   fallback column when a token carries none
      * @param string       $function
      *
      * @return $this
@@ -127,23 +130,26 @@ trait QueriesRelationships
             $this->select = ["`{$this->_model->getTable()}`.*"];
         }
 
-        if ($column !== '*') {
-            $column = $this->prepareColumnName($column);
-        }
+        [$relations, $columns] = $this->normalizeAggregateRelations((array) $relation, $column);
 
-        foreach ($this->_model->prepareRelation((array) $relation) as $relationName => $relationalQuery) {
+        foreach ($this->_model->prepareRelation($relations) as $relationName => $relationalQuery) {
             [$name, $alias] = $this->_model->prepareRelationName($relationName);
             if (\is_null($alias)) {
                 $alias = strtolower($name . '_' . $function);
             }
 
+            $aggregateColumn = $columns[$relationName];
+
             $this->correlate($relationalQuery);
 
             if ($function === 'exists') {
-                $query = $relationalQuery->select($column)->prepare();
+                $query = $relationalQuery->select($aggregateColumn)->prepare();
                 $this->selectRaw("exists({$query}) as `{$alias}`")->withCast([$alias => 'bool']);
             } else {
-                $query = $relationalQuery->selectRaw(sprintf('%s(%s)', $function, $column))->prepare();
+                if ($aggregateColumn !== '*') {
+                    $aggregateColumn = $relationalQuery->prepareColumnName($aggregateColumn);
+                }
+                $query = $relationalQuery->selectRaw(sprintf('%s(%s)', $function, $aggregateColumn))->prepare();
                 $this->selectRaw("({$query}) as `{$alias}`");
             }
         }
@@ -189,6 +195,67 @@ trait QueriesRelationships
         $this->_model->addRelation($relations);
 
         return $this;
+    }
+
+    /**
+     * Splits relation tokens into the relation expression (kept for resolution,
+     * including any `as <alias>`) and the column to aggregate, preserving the
+     * int-keyed-string vs string-keyed-closure shapes that prepareRelation expects.
+     *
+     * @param array $relation
+     * @param mixed $defaultColumn
+     *
+     * @return array{0: array, 1: array<string, mixed>}
+     */
+    private function normalizeAggregateRelations(array $relation, $defaultColumn)
+    {
+        $relations = [];
+        $columns   = [];
+
+        foreach ($relation as $key => $value) {
+            $positional              = \is_int($key) && \is_string($value);
+            [$relationExpr, $column] = $this->splitAggregateColumn($positional ? $value : (string) $key, $defaultColumn);
+
+            $columns[$relationExpr] = $column;
+            if ($positional) {
+                $relations[] = $relationExpr;
+            } else {
+                $relations[$relationExpr] = $value;
+            }
+        }
+
+        return [$relations, $columns];
+    }
+
+    /**
+     * Parses a `relation[.column][ as alias]` token.
+     *
+     * @param string $expr
+     * @param mixed  $defaultColumn used when the token carries no `.column`
+     *
+     * @return array{0: string, 1: mixed} [relationExpr, column]
+     */
+    private function splitAggregateColumn($expr, $defaultColumn)
+    {
+        $alias = '';
+        $body  = $expr;
+        if (preg_match('/^(.*?)\s+as\s+(.*)$/i', $expr, $matches)) {
+            $body  = $matches[1];
+            $alias = trim($matches[2]);
+        }
+
+        if (strpos($body, '.') !== false) {
+            [$relation, $column] = explode('.', $body, 2);
+            $column              = trim($column);
+        } else {
+            $relation = $body;
+            $column   = $defaultColumn;
+        }
+
+        $relation     = trim($relation);
+        $relationExpr = $alias !== '' ? $relation . ' as ' . $alias : $relation;
+
+        return [$relationExpr, $column];
     }
 
     /**

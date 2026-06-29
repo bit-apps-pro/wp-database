@@ -971,6 +971,10 @@ class QueryBuilder
      */
     public function save()
     {
+        if ($this->_model->fireEvent('saving') === false) {
+            return false;
+        }
+
         $columns = $this->prepareAttributeForSaveOrUpdate($this->_model->exists());
         $pk      = $this->_model->getPrimaryKey();
         if ($this->_model->exists()) {
@@ -989,11 +993,16 @@ class QueryBuilder
 
             $this->update = $columns;
 
-            return $this->exec() ? $this->_model : false;
+            if ($this->exec()) {
+                $this->_model->fireEvent('saved');
+
+                return $this->_model;
+            }
+
+            return false;
         }
 
         $this->insert = $columns;
-        $this->_model->fireEvent('saving');
         $this->exec();
         if ($insertId = $this->lastInsertId()) {
             $this->_model->setAttribute($pk, $insertId);
@@ -1012,7 +1021,7 @@ class QueryBuilder
      */
     public function count()
     {
-        return $this->aggregate('COUNT', $this->_model->getPrimaryKey());
+        return (int) $this->aggregate('COUNT', $this->_model->getPrimaryKey());
     }
 
     public function max($column)
@@ -1029,10 +1038,10 @@ class QueryBuilder
     {
         $query            = $this->clone();
         $query->select    = [];
-        $query->selectRaw = [];
+        $query->selectRaw = ['columns' => [], 'bindings' => []];
         $result           = $query->selectRaw($function . '(' . $query->prepareColumnName($column) . ') as ' . $function)->exec();
 
-        return \is_array($result) && !empty($result[0]->{$function}) ? $result[0]->{$function} : null;
+        return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
 
     public function delete()
@@ -1755,8 +1764,6 @@ class QueryBuilder
         $sql .= ' SET ';
         $columnCount = \count($this->update);
         foreach ($this->update as $key => $column) {
-            // $sql .= $column . ' = ' . $this->getValueType($this->bindings[$key]);
-
             if (\is_null($this->bindings[$key])) {
                 $sql .= $column . ' = NULL';
                 unset($this->bindings[$key]);
@@ -1781,23 +1788,20 @@ class QueryBuilder
      */
     private function prepareDelete()
     {
-        if (property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes) {
-            $this->update['deleted_at'] = $this->currentTimestamp();
-
-            return $this->prepareUpdate();
-        }
-
-        $sql = 'DELETE FROM ' . $this->table;
-
         $whereClause = $this->getWhere($this);
 
         if (empty($whereClause)) {
             return '';
         }
 
-        $sql .= $whereClause;
+        if (property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes) {
+            $timestamp = $this->currentTimestamp();
+            array_unshift($this->bindings, $timestamp);
 
-        return $sql;
+            return 'UPDATE ' . $this->table . ' SET deleted_at = ' . $this->getValueType($timestamp) . $whereClause;
+        }
+
+        return 'DELETE FROM ' . $this->table . $whereClause;
     }
 
     /**
