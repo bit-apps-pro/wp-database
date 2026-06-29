@@ -314,6 +314,9 @@ Multi-row reads return `BitApps\WPDatabase\Collection`, which implements
 ```php
 $contacts = Contact::where('is_active', 1)->get();
 
+// Wrap an existing array in a Collection
+$collection = Collection::make($items);
+
 $contacts->map(fn ($c) => $c->email);
 $contacts->filter(fn ($c) => $c->score > 50);
 $contacts->pluck('email');          // Collection of emails
@@ -397,7 +400,7 @@ Contact::query()->upsert([
 
 ## Attribute casting
 
-Declare `$casts` to convert attribute values on read. Supported types:
+Declare `$casts` to convert attribute values during `fill()` — both when hydrating query results and during mass-assignment. Supported types:
 
 | Cast | Result |
 |---|---|
@@ -417,7 +420,7 @@ protected $casts = [
 ```
 
 `NULL` values are returned as `null` (not cast). Add casts at runtime with
-`withCast()`:
+`withCast()`, which returns the builder and is chainable:
 
 ```php
 Contact::query()->withCast(['is_active' => 'bool'])->get();
