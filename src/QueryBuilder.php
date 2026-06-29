@@ -3,6 +3,7 @@
 namespace BitApps\WPDatabase;
 
 use BitApps\WPDatabase\Concerns\QueriesRelationships;
+use BitApps\WPDatabase\Query\Grammar;
 
 use Closure;
 use DateTime;
@@ -73,6 +74,8 @@ class QueryBuilder
     private $_for;
 
     private $_method;
+
+    private $_grammar;
 
     /**
      * Constructs QueryBuilder
@@ -161,6 +164,16 @@ class QueryBuilder
     }
 
     /**
+     * Returns the SQL grammar used to compile select statements.
+     *
+     * @return Grammar
+     */
+    public function grammar()
+    {
+        return $this->_grammar ??= new Grammar();
+    }
+
+    /**
      * Add bindings for this query
      *
      * @param array $bindings
@@ -188,6 +201,118 @@ class QueryBuilder
     public function getBindings()
     {
         return $this->bindings;
+    }
+
+    /**
+     * Resets the bindings collected for this query.
+     *
+     * @return void
+     */
+    public function resetBindings()
+    {
+        $this->bindings = [];
+    }
+
+    /**
+     * Returns the (prefixed) table name for this query.
+     *
+     * @return string
+     */
+    public function getTable()
+    {
+        return $this->table;
+    }
+
+    /**
+     * Returns the query method (select/insert/update/delete/raw).
+     *
+     * @return string|null
+     */
+    public function getMethod()
+    {
+        return $this->_method;
+    }
+
+    /**
+     * Returns the raw SQL set for a raw query.
+     *
+     * @return string
+     */
+    public function getRawSql()
+    {
+        return $this->raw;
+    }
+
+    /**
+     * Returns the clause list (where/having) for the given type.
+     *
+     * @param string $type
+     *
+     * @return array
+     */
+    public function getClauseList($type)
+    {
+        return $this->{$type};
+    }
+
+    /**
+     * Returns the join definitions for this query.
+     *
+     * @return array
+     */
+    public function getJoins()
+    {
+        return $this->joins;
+    }
+
+    /**
+     * Returns the group by columns for this query.
+     *
+     * @return array
+     */
+    public function getGroupByList()
+    {
+        return $this->groupBy;
+    }
+
+    /**
+     * Returns the order by definitions for this query.
+     *
+     * @return array
+     */
+    public function getOrderByList()
+    {
+        return $this->orderBy;
+    }
+
+    /**
+     * Returns the limit value for this query.
+     *
+     * @return int|string|null
+     */
+    public function getLimitValue()
+    {
+        return $this->limit;
+    }
+
+    /**
+     * Returns the offset value for this query.
+     *
+     * @return int|string|null
+     */
+    public function getOffsetValue()
+    {
+        return $this->offset;
+    }
+
+    /**
+     * Returns the table alias set via from().
+     *
+     * @return string|null
+     */
+    public function getFromAlias()
+    {
+        return $this->_from;
     }
 
     /**
@@ -340,46 +465,6 @@ class QueryBuilder
         }
 
         return $this->first();
-    }
-
-    /**
-     * Get processed conditions
-     *
-     * @param QueryBuilder $query
-     * @param string       $type
-     *
-     * @return string|string[]|null
-     */
-    public function getConditions(QueryBuilder $query, $type = 'where')
-    {
-        return $this->processConditions($query->{$type}, $type);
-    }
-
-    /**
-     * Prepare operator for where clause
-     *
-     * @param array $clause
-     *
-     * @return void
-     */
-    public function prepareOperatorForWhere($clause)
-    {
-        $sql = '';
-        if (!isset($clause['column'])) {
-            return $sql;
-        }
-
-        if (isset($clause['operator'])) {
-            $sql .= ' ' . $clause['operator'];
-        } elseif (\is_array($clause['value'])) {
-            $sql .= ' IN ';
-        } elseif (\is_null($clause['value'])) {
-            $sql = ' IS NULL';
-        } else {
-            $sql .= ' = ';
-        }
-
-        return $sql;
     }
 
     /**
@@ -743,30 +828,6 @@ class QueryBuilder
     }
 
     /**
-     * Returns order by clause sql
-     *
-     * @return string
-     */
-    public function getOrderBy()
-    {
-        $sql = '';
-        if (empty($this->orderBy)) {
-            return $sql;
-        }
-
-        foreach ($this->orderBy as $order) {
-            if (isset($order['raw'])) {
-                $sql .= $order['raw'] . ', ';
-                $this->addBindings($order['bindings']);
-            } elseif (isset($order['column'])) {
-                $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
-            }
-        }
-
-        return ' ORDER BY ' . rtrim($sql, ', ');
-    }
-
-    /**
      * Sets order by
      *
      * @param string $column
@@ -898,16 +959,6 @@ class QueryBuilder
         $this->offset = $count;
 
         return $this;
-    }
-
-    /**
-     * Returns processed offset for query
-     *
-     * @return string|null
-     */
-    public function getOffset()
-    {
-        return isset($this->limit) && isset($this->offset) ? " OFFSET {$this->offset}" : '';
     }
 
     /**
@@ -1117,10 +1168,31 @@ class QueryBuilder
     public function toSql()
     {
         if (isset($this->_method)) {
-            $sql = $this->{'prepare' . $this->_method}();
+            switch ($this->_method) {
+                case self::SELECT:
+                    $sql = $this->grammar()->compileSelect($this);
+
+                    break;
+                case self::INSERT:
+                    $sql = $this->prepareInsert();
+
+                    break;
+                case self::UPDATE:
+                    $sql = $this->prepareUpdate();
+
+                    break;
+                case self::DELETE:
+                    $sql = $this->prepareDelete();
+
+                    break;
+                case self::RAW:
+                    $sql = $this->prepareRaw();
+
+                    break;
+            }
         } elseif (!empty($this->select) || !empty($this->selectRaw)) {
             $this->_method = self::SELECT;
-            $sql           = $this->prepareSelect();
+            $sql           = $this->grammar()->compileSelect($this);
         }
 
         return $sql;
@@ -1206,48 +1278,23 @@ class QueryBuilder
     }
 
     /**
-     * Process conditions
+     * Returns types
      *
-     * @param array  $conditions
-     * @param string $type
+     * @param mixed $value
      *
      * @return string
      */
-    protected function processConditions($conditions, $type = null)
+    public function getValueType($value)
     {
-        $sql = '';
-        if (\is_array($conditions) && \count($conditions) > 0) {
-            foreach ($conditions as $clause) {
-                if (isset($clause['bool'])) {
-                    $sql .= ' ' . $clause['bool'];
-                } else {
-                    $sql .= ' AND';
-                }
+        $placeHolder = '%s';
 
-                if (isset($clause['raw'])) {
-                    $sql .= ' ' . $clause['raw'];
-                    $this->addBindings($clause['bindings']);
-
-                    continue;
-                }
-
-                if (isset($clause['query']) && !\is_null($type)) {
-                    $clause['query']->bindings = [];
-                    $sql .= ' (' . $clause['query']->getConditions($clause['query'], $type) . ')';
-                    $this->addBindings($clause['query']->getBindings());
-
-                    continue;
-                }
-
-                $sql .= $this->prepareColumnForWhere($clause);
-                $sql .= $this->prepareOperatorForWhere($clause);
-                $sql .= $this->prepareValueForWhere($clause, $this);
-            }
-
-            $sql = $this->removeLeadingBool($sql);
+        if (\gettype($value) == 'integer') {
+            $placeHolder = '%d';
+        } elseif (\gettype($value) == 'double') {
+            $placeHolder = '%f';
         }
 
-        return $sql;
+        return $placeHolder;
     }
 
     /**
@@ -1303,33 +1350,6 @@ class QueryBuilder
     }
 
     /**
-     * Removes leading and | or
-     *
-     * @param string $sql
-     *
-     * @return string
-     */
-    protected function removeLeadingBool($sql)
-    {
-        return preg_replace('/and |or /i', '', $sql, 1);
-    }
-
-    /**
-     * Returns processed sql for where clause
-     *
-     * @return string
-     */
-    protected function getWhere()
-    {
-        $sql = $this->getConditions($this);
-        if (empty($sql)) {
-            return '';
-        }
-
-        return " WHERE {$sql}";
-    }
-
-    /**
      * Prepares where conditions
      *
      * @param array  $params
@@ -1343,20 +1363,6 @@ class QueryBuilder
         if (!empty($conditions)) {
             $this->where[] = $conditions;
         }
-    }
-
-    /**
-     * Returns sql for group by clause
-     *
-     * @return string
-     */
-    protected function getGroupBy()
-    {
-        if (empty($this->groupBy)) {
-            return '';
-        }
-
-        return ' GROUP BY ' . implode(',', $this->groupBy);
     }
 
     /**
@@ -1375,40 +1381,6 @@ class QueryBuilder
         }
 
         return $this;
-    }
-
-    /**
-     * Return sql for having clause
-     *
-     * @return string
-     */
-    protected function getHaving()
-    {
-        $sql = $this->getConditions($this, 'having');
-        if (empty($sql)) {
-            return '';
-        }
-
-        return " HAVING {$sql}";
-    }
-
-    /**
-     * Returns sql for join
-     *
-     * @return string
-     */
-    protected function getJoin()
-    {
-        $sql = '';
-        if (empty($this->joins)) {
-            return $sql;
-        }
-
-        foreach ($this->joins as $join) {
-            $sql .= ' ' . $join['type'] . ' JOIN ' . $join['table'] . ' ON ' . $this->processConditions($join['on']);
-        }
-
-        return $sql;
     }
 
     /**
@@ -1432,26 +1404,6 @@ class QueryBuilder
         }
 
         return compact('column', 'operator', 'secondColumn', 'bool');
-    }
-
-    /**
-     * Returns types
-     *
-     * @param mixed $value
-     *
-     * @return string
-     */
-    protected function getValueType($value)
-    {
-        $placeHolder = '%s';
-
-        if (\gettype($value) == 'integer') {
-            $placeHolder = '%d';
-        } elseif (\gettype($value) == 'double') {
-            $placeHolder = '%f';
-        }
-
-        return $placeHolder;
     }
 
     /**
@@ -1487,21 +1439,6 @@ class QueryBuilder
         }
 
         return $timezoneString;
-    }
-
-    private function prepareRawSelect()
-    {
-        $query = '';
-        if (!empty($this->selectRaw['columns'])) {
-            $query = \count($this->select) ? ', ' : '';
-            $query .= implode(', ', $this->selectRaw['columns']);
-        }
-
-        if (!empty($this->selectRaw['bindings'])) {
-            $this->bindings = array_merge($this->bindings, $this->selectRaw['bindings']);
-        }
-
-        return $query;
     }
 
     /**
@@ -1580,80 +1517,6 @@ class QueryBuilder
     }
 
     /**
-     * Table alias for select query
-     *
-     * @return string
-     */
-    private function getFrom()
-    {
-        return isset($this->_from) ? " {$this->_from}" : null;
-    }
-
-    /**
-     * Prepare column for where clause
-     *
-     * @param array $clause
-     *
-     * @return void
-     */
-    private function prepareColumnForWhere($clause)
-    {
-        if (isset($clause['column'])) {
-            return ' ' . $this->prepareColumnName($clause['column']);
-        }
-    }
-
-    /**
-     * Prepare value for where clause
-     *
-     * @param array $clause
-     * @param self  $query
-     *
-     * @return string
-     */
-    private function prepareValueForWhere($clause, self $query)
-    {
-        $sql = '';
-        if (isset($clause['secondColumn'])) {
-            return ' ' . $clause['secondColumn'];
-        }
-
-        if (!isset($clause['value'])) {
-            return $sql;
-        }
-
-        if (\is_array($clause['value'])) {
-            $sql .= ' (';
-            foreach ($clause['value'] as $value) {
-                $sql .= $this->getValueType($value) . ',';
-                $query->addBindings($value);
-            }
-
-            $sql = rtrim($sql, ',') . ')';
-        } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') !== false) {
-            $sql .= ' ' . $clause['value'];
-        } elseif (isset($clause['operator']) && strtoupper($clause['operator'] === 'LIKE')) {
-            $sql .= ' %s';
-            $query->addBindings($clause['value']);
-        } elseif (!\is_null($clause['value'])) {
-            $sql .= ' ' . $query->getValueType($clause['value']);
-            $query->addBindings($clause['value']);
-        }
-
-        return $sql;
-    }
-
-    /**
-     * Returns limit part for query
-     *
-     * @return string|null
-     */
-    private function getLimit()
-    {
-        return isset($this->limit) ? " LIMIT {$this->limit}" : '';
-    }
-
-    /**
      * Prepares columns and value
      *
      * @param bool $isUpdate
@@ -1701,29 +1564,6 @@ class QueryBuilder
     }
 
     /**
-     * Prepares select statement
-     *
-     * @return string
-     */
-    private function prepareSelect()
-    {
-        $this->bindings = [];
-        $sql            = 'SELECT ' . implode(',', $this->select);
-        $sql .= $this->prepareRawSelect();
-        $sql .= ' FROM ' . $this->table;
-        $sql .= $this->getFrom();
-        $sql .= $this->getJoin();
-        $sql .= $this->getWhere($this);
-        $sql .= $this->getGroupBy();
-        $sql .= $this->getHaving();
-        $sql .= $this->getOrderBy();
-        $sql .= $this->getLimit();
-        $sql .= $this->getOffset();
-
-        return trim($sql);
-    }
-
-    /**
      * Prepares insert statement
      *
      * @return string
@@ -1761,7 +1601,7 @@ class QueryBuilder
     private function prepareUpdate()
     {
         $sql = 'UPDATE ' . $this->table;
-        $sql .= $this->getJoin();
+        $sql .= $this->grammar()->getJoin($this);
         $sql .= ' SET ';
         $columnCount = \count($this->update);
         foreach ($this->update as $key => $column) {
@@ -1777,7 +1617,7 @@ class QueryBuilder
             }
         }
 
-        $sql .= $this->getWhere($this);
+        $sql .= $this->grammar()->getWhere($this);
 
         return $sql;
     }
@@ -1789,7 +1629,7 @@ class QueryBuilder
      */
     private function prepareDelete()
     {
-        $whereClause = $this->getWhere($this);
+        $whereClause = $this->grammar()->getWhere($this);
 
         if (empty($whereClause)) {
             return '';
