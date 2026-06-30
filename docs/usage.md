@@ -717,7 +717,3 @@ method relocation.
   defaults to `null`, not `''`; table names are used as-is unless you call
   `Schema::withPrefix()` explicitly. See [Schema builder reference](schema.md).
 
-- **`change()` column modifier is broken: emits malformed `ADD COLUMN CHANGE COLUMN …`
-  SQL.** The `addColumnQuery()` method prepends `ADD COLUMN` in edit mode and also
-  prepends `CHANGE COLUMN` when the `change` flag is set, producing invalid SQL.
-  Avoid `change()` in production until this is fixed.

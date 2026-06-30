@@ -256,19 +256,14 @@ Schema::edit('orders', function ($table) {
 
 ### Modifying an existing column
 
-Chain `change()` on a column definition inside `Schema::edit` to emit `CHANGE COLUMN`
+Chain `change()` on a column definition inside `Schema::edit` to emit `MODIFY COLUMN`
 instead of `ADD COLUMN`:
 
 ```php
 Schema::edit('orders', function ($table) {
-    $table->varchar('reference', 128)->change();    // CHANGE COLUMN — widen the length
+    $table->varchar('reference', 128)->change();    // MODIFY COLUMN — widen the length
 });
 ```
-
-> ⚠️ **Known bug:** `change()` currently emits malformed SQL (`ADD COLUMN CHANGE COLUMN …`)
-> because `addColumnQuery()` unconditionally prepends `ADD COLUMN` in edit mode and then
-> also prepends `CHANGE COLUMN` when the `change` flag is set. Do not rely on `change()`
-> in production until this is fixed.
 
 ### Drop helpers
 
@@ -334,11 +329,6 @@ Schema::withPrefix('custom_')->create('orders', function ($table) {
   `null`, not `''`; no prefix is prepended unless you call `Schema::withPrefix()` first.
   To use the WordPress prefix, pass it explicitly:
   `Schema::withPrefix($wpdb->prefix)->create(...)`.
-
-- **`change()` is broken — emits malformed SQL.** `addColumnQuery()` prepends
-  `ADD COLUMN` for every column in edit mode, then also prepends `CHANGE COLUMN` when the
-  `change` flag is set, producing `ADD COLUMN CHANGE COLUMN …`. Avoid `change()` in
-  production until this is fixed.
 
 - **`dropTimestamps()`, `dropIndex()`, `dropUnique()`, `dropForeign()`, `dropPrimary()`
   must be used inside a `Schema::edit()` callback.** A direct static call (e.g.

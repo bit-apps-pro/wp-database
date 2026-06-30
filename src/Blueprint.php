@@ -99,7 +99,7 @@ class Blueprint
      * @param string       $prefix   Table prefix
      * @param null|Closure $callback Closure to build the blueprint
      */
-    public function __construct($table, $method, $prefix = '', Closure $callback = null)
+    public function __construct($table, $method, $prefix = '', ?Closure $callback = null)
     {
         $this->_prefix   = $prefix;
         $this->table     = "{$prefix}{$table}";
@@ -639,12 +639,10 @@ class Blueprint
                 $query .= "\n, ";
             }
 
-            if ($this->method === 'edit') {
-                $query .= 'ADD COLUMN ';
-            }
-
             if (isset($column['change'])) {
-                $query .= 'CHANGE COLUMN ';
+                $query .= 'MODIFY COLUMN ';
+            } elseif ($this->method === 'edit') {
+                $query .= 'ADD COLUMN ';
             }
 
             $query .= $column['name'] . ' ' . $column['type'];

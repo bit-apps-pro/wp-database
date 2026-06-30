@@ -46,7 +46,7 @@ class Schema
         return $this->build($blueprint);
     }
 
-    public function createBlueprint($schema, $method, Closure $callback = null)
+    public function createBlueprint($schema, $method, ?Closure $callback = null)
     {
         return new Blueprint(
             $schema,

@@ -8,35 +8,34 @@
  * so `Connection` can resolve a prefix and capture executed SQL without a real
  * database.
  */
-
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-if (!\defined('ABSPATH')) {
-    \define('ABSPATH', __DIR__ . '/');
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/');
 }
 
-if (!\function_exists('esc_html')) {
+if (!function_exists('esc_html')) {
     function esc_html($text)
     {
         return $text;
     }
 }
 
-if (!\function_exists('wp_json_encode')) {
+if (!function_exists('wp_json_encode')) {
     function wp_json_encode($data, $options = 0, $depth = 512)
     {
         return json_encode($data, $options, $depth);
     }
 }
 
-if (!\function_exists('get_option')) {
+if (!function_exists('get_option')) {
     function get_option($name, $default = false)
     {
         return $default;
     }
 }
 
-if (!\function_exists('wp_timezone_string')) {
+if (!function_exists('wp_timezone_string')) {
     function wp_timezone_string()
     {
         return 'UTC';
@@ -63,10 +62,14 @@ class FakeWpdb
 
     public $suppress_errors = false;
 
-    /** @var string[] */
+    /**
+     * @var string[]
+     */
     public $queries = [];
 
-    /** @var null|callable resolves a result set from the SQL string */
+    /**
+     * @var null|callable resolves a result set from the SQL string
+     */
     public $resolver;
 
     public function queueResult(array $rows)
@@ -79,7 +82,7 @@ class FakeWpdb
         $this->last_query = $sql;
         $this->queries[]  = $sql;
 
-        if (\is_callable($this->resolver)) {
+        if (is_callable($this->resolver)) {
             $this->last_result = ($this->resolver)($sql);
         }
 
@@ -88,7 +91,7 @@ class FakeWpdb
 
     public function prepare($query, ...$args)
     {
-        if (\count($args) === 1 && \is_array($args[0])) {
+        if (count($args) === 1 && is_array($args[0])) {
             $args = $args[0];
         }
 
@@ -109,6 +112,11 @@ class FakeWpdb
     public function get_results($query)
     {
         return $this->last_result;
+    }
+
+    public function has_cap($cap)
+    {
+        return false;
     }
 }
 
