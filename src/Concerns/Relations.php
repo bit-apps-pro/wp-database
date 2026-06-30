@@ -279,11 +279,8 @@ trait Relations
 
     private function retrievePivotRelateData($relationName, QueryBuilder $relationQuery, QueryBuilder $query)
     {
-        $bucketAlias = $this->applyPivotSelectAndJoin($relationQuery);
-
-        $pivot       = $relationQuery->getModel()->getActiveRelationKey();
-        $pivotRef    = $relationQuery->getModel()->getPrefix() . $pivot['pivotTable'];
-        $parentQuery = clone $query;
+        [$pivot, $pivotRef, $bucketAlias] = $this->applyPivotSelectAndJoin($relationQuery);
+        $parentQuery                      = clone $query;
 
         $relationQuery->whereRaw(
             $pivotRef . '.' . $pivot['foreignPivotKey']
@@ -303,16 +300,17 @@ trait Relations
 
     /**
      * Selects related.* plus the aliased pivot link column, joins the pivot
-     * table on the related key, and appends any withPivot() columns. Returns the
-     * bucket alias used to group related rows by their parent link.
+     * table on the related key, and appends any withPivot() columns. Returns
+     * [pivot metadata, prefixed pivot-table reference, bucket alias] so callers
+     * build their predicate without recomputing them.
      *
-     * @return string
+     * @return array
      */
     private function applyPivotSelectAndJoin(QueryBuilder $relationQuery)
     {
         $model    = $relationQuery->getModel();
         $pivot    = $model->getActiveRelationKey();
-        $pivotRef = $model->getPrefix() . $pivot['pivotTable'];
+        $pivotRef = $model->getTablePrefix() . $pivot['pivotTable'];
         $alias    = Model::PIVOT_ATTRIBUTE_PREFIX . $pivot['foreignPivotKey'];
 
         $relationQuery->select(['*']);
@@ -330,7 +328,7 @@ trait Relations
             );
         }
 
-        return $alias;
+        return [$pivot, $pivotRef, $alias];
     }
 
     private function setRelatedData(Model $model)

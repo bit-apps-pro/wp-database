@@ -770,7 +770,7 @@ class QueryBuilder
         $parts         = preg_split('/ as /i', $table);
         $rawTable      = $parts[0];
         $alias         = isset($parts[1]) ? $parts[1] : null;
-        $prefixedTable = $this->_model->getPrefix() . $rawTable;
+        $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
         $reference     = $alias !== null ? $alias : $prefixedTable;
         $tableSql      = $alias !== null ? $prefixedTable . ' as ' . $alias : $prefixedTable;
 

@@ -158,13 +158,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
             $this->_tableWithoutPrefix = $this->table;
         }
 
-        $dbPrefix = Connection::wpPrefix();
-
-        if ($this->prefix === '') {
-            $dbPrefix = Connection::getPrefix();
-        }
-
-        $this->table = $dbPrefix . $this->prefix . $this->_tableWithoutPrefix;
+        $this->table = $this->getTablePrefix() . $this->_tableWithoutPrefix;
 
         if (!isset($this->primaryKey)) {
             $this->primaryKey = 'id';
@@ -302,9 +296,23 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->table;
     }
 
+    /** Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix). */
     public function getPrefix()
     {
         return $this->prefix === '' ? Connection::getPrefix() : $this->prefix;
+    }
+
+    /**
+     * Full prefix prepended to this model's table: wp_ plus the plugin prefix.
+     * Mirrors the table built in the constructor so joins and pivot tables
+     * resolve to the same physical table the model itself targets. Unlike
+     * getPrefix(), this never drops wp_ for custom-$prefix models.
+     *
+     * @return string
+     */
+    public function getTablePrefix()
+    {
+        return $this->prefix === '' ? Connection::getPrefix() : Connection::wpPrefix() . $this->prefix;
     }
 
     public function getTableWithoutPrefix()
@@ -596,9 +604,7 @@ abstract class Model implements ArrayAccess, JsonSerializable
         $relation = $attribute->getModel()->getRelateAs();
 
         if ($relation === self::RELATE_AS_PIVOT) {
-            $this->applyPivotSelectAndJoin($attribute);
-            $pivot    = $attribute->getModel()->getActiveRelationKey();
-            $pivotRef = $attribute->getModel()->getPrefix() . $pivot['pivotTable'];
+            [$pivot, $pivotRef] = $this->applyPivotSelectAndJoin($attribute);
             $attribute->where(
                 $pivotRef . '.' . $pivot['foreignPivotKey'],
                 $this->getAttribute($pivot['parentKey'])
