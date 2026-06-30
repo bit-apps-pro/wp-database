@@ -123,7 +123,7 @@ class Contact extends Model
 | `$fillable` | Mass-assignment allow-list. Unset = allow all non-timestamp, non-PK attributes. |
 | `$casts` | Map of column → cast type. See [Attribute casting](#attribute-casting). |
 | `$timestamps` | Auto-set `created_at`/`updated_at` on insert/update (declared `true` in the base `Model`; set to `false` to disable). Requires the columns to exist — see [`timestamps()` in `docs/schema.md`](schema.md#timestamps). |
-| `$soft_deletes` | Must be declared `true` on the model. `delete()` then sets `deleted_at` instead of removing the row. **Reads are not filtered** — soft-deleted rows are returned by `all()` and every query. See [Limitations](#limitations--known-issues) and [`softDeletes()` in `docs/schema.md`](schema.md#softdeletes). |
+| `$soft_deletes` | Must be declared `true` on the model. `delete()` then sets `deleted_at` instead of removing the row. Reads return **all rows by default** — including trashed ones. To enable automatic filtering, also declare `public $soft_delete_scope = true;`; reads will then exclude trashed rows automatically. Use `->withTrashed()` to include them, or `->onlyTrashed()` to return only trashed rows. See [Limitations](#limitations--known-issues) and [`softDeletes()` in `docs/schema.md`](schema.md#softdeletes). |
 
 ---
 
@@ -361,8 +361,10 @@ Contact::destroy([1, 2, 3]);               // delete by primary keys
   `RuntimeException('SQL query is empty')` — a guard against wiping the table.
   Use a raw `TRUNCATE` if you really mean to empty it.
 - With `$soft_deletes = true`, `delete()` sets `deleted_at` instead of removing
-  the row. **Reads are not filtered** — soft-deleted rows are returned by `all()`
-  and every query; there is no automatic scope. See [Limitations](#limitations--known-issues).
+  the row. Reads return **all rows by default** — including trashed ones. Add
+  `public $soft_delete_scope = true;` to enable automatic filtering: reads exclude
+  trashed rows, `->withTrashed()` includes them, `->onlyTrashed()` returns only
+  trashed rows. See [Limitations](#limitations--known-issues).
 
 ---
 
@@ -674,10 +676,15 @@ method relocation.
   **calling** model's table — the opposite of Laravel's convention. Ensure you
   supply both arguments explicitly to avoid confusion.
 
-- **Soft delete is write-only.** `softDeletes()` adds a `deleted_at` column and
-  `delete()` sets it, but there is no global scope to filter soft-deleted rows
-  from queries. Every `get()` / `find()` returns soft-deleted rows alongside
-  live ones. Workaround: add `->whereNull('deleted_at')` to every read query.
+- **Soft delete reads are unfiltered by default.** `softDeletes()` adds a
+  `deleted_at` column and `delete()` sets it. Reads return all rows — including
+  trashed ones — unless you also declare `public $soft_delete_scope = true;` on
+  the model. With the flag set, reads automatically exclude trashed rows;
+  `->withTrashed()` includes them and `->onlyTrashed()` returns only trashed rows.
+  **Edge case:** `refresh()` / `exists()` use a default (now scoped) read, so a
+  trashed opt-in model reloaded without `->withTrashed()` reports `exists() === false`
+  and a subsequent `save()` will INSERT rather than UPDATE. Follow-up planned to
+  thread soft-delete awareness into `refresh()`.
 
 - **`upsert` is MySQL-only.** It generates `INSERT … ON DUPLICATE KEY UPDATE`,
   which is not portable to other databases. Additionally, the generated SQL sets

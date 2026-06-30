@@ -212,8 +212,11 @@ Adds a single nullable `TIMESTAMP` column named `deleted_at`, defaulting to `NUL
 
 The model-side `$soft_deletes = true` property (see
 [Defining models](usage.md#defining-models)) instructs `delete()` to set `deleted_at`
-rather than removing the row. **Reads are not filtered** — soft-deleted rows are returned
-by `all()` and every query; append `->whereNull('deleted_at')` manually to exclude them.
+rather than removing the row. Reads return **all rows by default** — including trashed
+ones. To enable automatic filtering, also declare `public $soft_delete_scope = true;` on
+the model: reads then exclude trashed rows automatically. Use `->withTrashed()` to
+include them, or `->onlyTrashed()` to return only trashed rows. See
+[Limitations](usage.md#limitations--known-issues) for the `refresh()` edge case.
 
 ---
 

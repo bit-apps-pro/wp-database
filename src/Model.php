@@ -87,6 +87,8 @@ use RuntimeException;
  * @method static bool|string                   delete()
  * @method static string                        toSql()
  * @method static string                        prepare($sql = null)
+ * @method static QueryBuilder                  withTrashed()
+ * @method static QueryBuilder                  onlyTrashed()
  *
  * @mixin \BitApps\WPDatabase\QueryBuilder
  */

@@ -77,6 +77,10 @@ class QueryBuilder
 
     private $_grammar;
 
+    private $_withTrashed = false;
+
+    private $_onlyTrashed = false;
+
     /**
      * Constructs QueryBuilder
      *
@@ -240,13 +244,30 @@ class QueryBuilder
     /**
      * Returns the clause list (where/having) for the given type.
      *
+     * When the type is 'where' and the model opts into soft-delete scope,
+     * a deleted_at IS NULL (or IS NOT NULL for onlyTrashed) clause is injected
+     * on SELECT queries without mutating $this->where.
+     *
      * @param string $type
      *
      * @return array
      */
     public function getClauseList($type)
     {
-        return $type === 'having' ? $this->having : $this->where;
+        if ($type === 'having') {
+            return $this->having;
+        }
+
+        $where = $this->where;
+        if ($this->isSoftDeleteModel() && $this->_method === self::SELECT) {
+            if ($this->_onlyTrashed) {
+                $where[] = ['column' => 'deleted_at', 'operator' => 'IS NOT NULL'];
+            } elseif ($this->autoScopeEnabled() && !$this->_withTrashed) {
+                $where[] = ['column' => 'deleted_at', 'operator' => 'IS NULL'];
+            }
+        }
+
+        return $where;
     }
 
     /**
@@ -575,6 +596,30 @@ class QueryBuilder
             'column'   => $column,
             'operator' => 'IS NOT NULL',
         ];
+
+        return $this;
+    }
+
+    /**
+     * Include soft-deleted rows in the result set.
+     *
+     * @return $this
+     */
+    public function withTrashed()
+    {
+        $this->_withTrashed = true;
+
+        return $this;
+    }
+
+    /**
+     * Restrict results to only soft-deleted rows.
+     *
+     * @return $this
+     */
+    public function onlyTrashed()
+    {
+        $this->_onlyTrashed = true;
 
         return $this;
     }
@@ -1436,6 +1481,26 @@ class QueryBuilder
         }
 
         return $timezoneString;
+    }
+
+    /**
+     * Returns true when the model declares soft-delete support.
+     *
+     * @return bool
+     */
+    private function isSoftDeleteModel()
+    {
+        return property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes;
+    }
+
+    /**
+     * Returns true when the model opts into automatic soft-delete read scope.
+     *
+     * @return bool
+     */
+    private function autoScopeEnabled()
+    {
+        return property_exists($this->_model, 'soft_delete_scope') && $this->_model->soft_delete_scope;
     }
 
     /**
