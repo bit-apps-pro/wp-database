@@ -1280,9 +1280,14 @@ class QueryBuilder
         $this->bindings = [];
         $columns        = array_keys($values[0]);
         sort($columns);
-        $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps && !\in_array('created_at', $columns);
-        if ($createdAt) {
+        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
+        $addCreatedAt     = $manageTimestamps                            && !\in_array('created_at', $columns, true);
+        $addUpdatedAt     = $manageTimestamps                            && !\in_array('updated_at', $columns, true);
+        if ($addCreatedAt) {
             $columns[] = 'created_at';
+        }
+        if ($addUpdatedAt) {
+            $columns[] = 'updated_at';
         }
         $sql = 'INSERT INTO ' . $this->table;
         $sql .= ' (' . implode(', ', $columns) . ')';
@@ -1291,8 +1296,14 @@ class QueryBuilder
         $insertAbleValues = [];
         foreach ($values as $row) {
             ksort($row);
-            if ($createdAt) {
-                $row['created_at'] = $this->currentTimestamp();
+            if ($addCreatedAt || $addUpdatedAt) {
+                $now = $this->currentTimestamp();
+                if ($addCreatedAt) {
+                    $row['created_at'] = $now;
+                }
+                if ($addUpdatedAt) {
+                    $row['updated_at'] = $now;
+                }
             }
 
             $rowValues          = array_values($row);
@@ -1316,15 +1327,14 @@ class QueryBuilder
 
         $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
         $sql .= ' ON DUPLICATE KEY UPDATE ';
-        if (\in_array('created_at', $update, true)) {
-            $update   = array_diff($update, ['created_at']);
-            $update[] = 'updated_at';
+        if ($manageTimestamps) {
+            // Never overwrite the original creation time on update; always bump updated_at.
+            $update = array_diff($update, ['created_at']);
+            if (!\in_array('updated_at', $update, true)) {
+                $update[] = 'updated_at';
+            }
         }
         $update = array_map(function ($column) {
-            if ($column === 'updated_at') {
-                return $column . ' = VALUES(created_at)';
-            }
-
             return $column . ' = VALUES(' . $column . ')';
         }, $update);
         $sql .= implode(', ', $update);

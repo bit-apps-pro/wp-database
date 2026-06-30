@@ -303,6 +303,12 @@ Not signature breaks, but observable runtime differences.
 - **Internal layout:** the three traits moved to `BitApps\WPDatabase\Concerns`
   and SELECT compilation extracted to `BitApps\WPDatabase\Query\Grammar`. Public
   classes are unchanged; only code importing those internals directly is affected.
+- **`upsert()` now manages `updated_at`** for `$timestamps` models: it inserts both
+  `created_at` and `updated_at`, and on a duplicate key bumps
+  `updated_at = VALUES(updated_at)` while preserving `created_at` — replacing the
+  prior behavior that left `updated_at` untouched and mapped
+  `updated_at = VALUES(created_at)`. The generated SQL changes for upsert on
+  timestamped models.
 
 ---
 

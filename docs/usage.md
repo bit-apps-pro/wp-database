@@ -387,13 +387,11 @@ Contact::query()->upsert([
 ```
 
 > **MySQL only** — `upsert()` emits `INSERT … ON DUPLICATE KEY UPDATE` and will not
-> work on other databases.
->
-> **`updated_at` quirk** — when `updated_at` is in the conflict-update set, the
-> generated SQL maps `updated_at = VALUES(created_at)` rather than
-> `VALUES(updated_at)`. This is a known implementation detail; the timestamp will
-> reflect the value written to `created_at` at insert time, not a separate
-> `updated_at` value. See [Limitations](#limitations--known-issues).
+> work on other databases. See [Limitations](#limitations--known-issues).
+
+On a model with `$timestamps = true`, `upsert()` sets both `created_at` and
+`updated_at` on insert, and on a duplicate key it bumps `updated_at`
+(`updated_at = VALUES(updated_at)`) while preserving the original `created_at`.
 
 ---
 
@@ -687,10 +685,8 @@ method relocation.
   thread soft-delete awareness into `refresh()`.
 
 - **`upsert` is MySQL-only.** It generates `INSERT … ON DUPLICATE KEY UPDATE`,
-  which is not portable to other databases. Additionally, the generated SQL sets
-  `updated_at = VALUES(created_at)` instead of `VALUES(updated_at)`, so the
-  timestamp may be wrong on update. Workaround: use separate `insert` + `update`
-  calls where portability or correct timestamps are required.
+  which is not portable to other databases. Workaround: use separate `insert` +
+  `update` calls where cross-database portability is required.
 
 - **Schema builder uses the literal table name by design.** `Schema::create()` passes
   the name through as-is — no WordPress prefix is added automatically, so existing

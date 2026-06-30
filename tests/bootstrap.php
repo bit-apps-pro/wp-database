@@ -132,3 +132,4 @@ require __DIR__ . '/Fixtures/CastModel.php';
 require __DIR__ . '/Fixtures/AccessorModel.php';
 require __DIR__ . '/Fixtures/CreatingUser.php';
 require __DIR__ . '/Fixtures/ScopedSoftPost.php';
+require __DIR__ . '/Fixtures/TimestampedRow.php';
