@@ -243,6 +243,23 @@ trait Relations
         return [$foreignKey, $localKey];
     }
 
+    /**
+     * Compiles the parent query as a single-column key subquery for a relation's
+     * IN (...) constraint. Strips the parent's selectRaw — that subquery must
+     * return exactly the key column, not the caller's extra raw expressions.
+     *
+     * @param string $keyColumn
+     *
+     * @return string
+     */
+    private function prepareKeySubquery(QueryBuilder $query, $keyColumn): string
+    {
+        $keyQuery            = clone $query;
+        $keyQuery->selectRaw = ['columns' => [], 'bindings' => []];
+
+        return $keyQuery->select($keyColumn)->prepare();
+    }
+
     private function retrieveRelateData(QueryBuilder $query)
     {
         $relations = $this->getRelations();
@@ -255,13 +272,12 @@ trait Relations
                     continue;
                 }
 
-                $parentQuery = clone $query;
                 $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
                 $relationQuery->whereRaw(
                     $relationKey['foreignKey']
                         . ' IN ( SELECT * FROM ('
-                        . $parentQuery->select($relationKey['localKey'])->prepare()
+                        . $this->prepareKeySubquery($query, $relationKey['localKey'])
                         . ') AS subquery )'
                 );
 
@@ -280,12 +296,11 @@ trait Relations
     private function retrievePivotRelateData($relationName, QueryBuilder $relationQuery, QueryBuilder $query)
     {
         [$pivot, $pivotRef, $bucketAlias] = $this->applyPivotSelectAndJoin($relationQuery);
-        $parentQuery                      = clone $query;
 
         $relationQuery->whereRaw(
             $pivotRef . '.' . $pivot['foreignPivotKey']
                 . ' IN ( SELECT * FROM ('
-                . $parentQuery->select($pivot['parentKey'])->prepare()
+                . $this->prepareKeySubquery($query, $pivot['parentKey'])
                 . ') AS subquery )'
         );
 

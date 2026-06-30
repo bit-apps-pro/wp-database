@@ -52,4 +52,22 @@ final class EagerLoadIntegrationTest extends TestCase
         $this->assertCount(1, $second->posts, 'user 2 should have 1 post');
         $this->assertInstanceOf(Post::class, $first->posts[0]);
     }
+
+    /**
+     * The parent's selectRaw must NOT leak into the eager key subquery — that
+     * subquery feeds an IN (...) and must return exactly one column (the localKey),
+     * else MySQL raises "Operand should contain 1 column(s)".
+     */
+    public function testEagerLoadKeySubqueryIgnoresParentSelectRaw(): void
+    {
+        User::select(['id'])->selectRaw('CONCAT("X", id) as cx')->with('posts')->get();
+
+        $postsSql = $GLOBALS['wpdb']->queries[1];
+
+        $this->assertStringNotContainsString('CONCAT', $postsSql);
+        $this->assertStringContainsString(
+            'IN ( SELECT * FROM (SELECT `wp_users`.`id` FROM wp_users',
+            $postsSql
+        );
+    }
 }
