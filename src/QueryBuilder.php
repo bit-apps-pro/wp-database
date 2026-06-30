@@ -705,18 +705,17 @@ class QueryBuilder
      */
     public function join($table, $firstColumn, $operator = null, $secondColumn = null, $type = 'INNER')
     {
-        $table    = Connection::wpPrefix() . $this->_model->getPrefix() . $table;
-        $hasAlias = preg_split('/ as /i', $table);
-        if ($hasAlias && isset($hasAlias[1])) {
-            $table = $hasAlias[0];
-            $alias = $hasAlias[1];
-        } else {
-            $alias = $table;
-        }
+        $parts         = preg_split('/ as /i', $table);
+        $rawTable      = $parts[0];
+        $alias         = isset($parts[1]) ? $parts[1] : null;
+        $prefixedTable = $this->_model->getPrefix() . $rawTable;
+        $reference     = $alias !== null ? $alias : $prefixedTable;
+        $tableSql      = $alias !== null ? $prefixedTable . ' as ' . $alias : $prefixedTable;
 
-        $on[]          = $this->prepareOn($alias, $firstColumn, $operator, $secondColumn, 'AND');
+        $on[]          = $this->prepareOn($reference, $firstColumn, $operator, $secondColumn, 'AND');
         $this->joins[] = [
-            'table' => $table,
+            'table' => $tableSql,
+            'alias' => $reference,
             'on'    => $on,
             'type'  => $type,
         ];
@@ -801,7 +800,7 @@ class QueryBuilder
             $joinIndex = 0;
         }
 
-        $table                           = $this->joins[$joinIndex]['table'];
+        $table                           = $this->joins[$joinIndex]['alias'];
         $this->joins[$joinIndex]['on'][] = $this->prepareOn($table, $firstColumn, $operator, $secondColumn, $bool);
 
         return $this;
@@ -1393,9 +1392,12 @@ class QueryBuilder
     protected function prepareOn($table, $column, $operator, $secondColumn, $bool = 'AND')
     {
         if (\is_null($operator) && \is_null($secondColumn)) {
-            $column       = $this->_model->getTable() . '.' . $column;
-            $secondColumn = $table . '.' . $column;
+            $secondColumn = $column;
             $operator     = '=';
+        }
+
+        if (!\is_null($secondColumn) && strpos($secondColumn, '.') === false) {
+            $secondColumn = $table . '.' . $secondColumn;
         }
 
         return compact('column', 'operator', 'secondColumn', 'bool');

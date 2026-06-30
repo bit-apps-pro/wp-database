@@ -72,9 +72,22 @@ final class GrammarTest extends TestCase
     public function testJoin(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users INNER JOIN wp_wp_posts ON  `wp_users`.`user_id` = id',
+            'SELECT  FROM wp_users INNER JOIN wp_posts ON  `wp_users`.`user_id` = wp_posts.id',
             (new User())->join('posts', 'user_id', '=', 'id')->toSql()
         );
+    }
+
+    public function testJoinWithAlias(): void
+    {
+        $sql = (new User())->join('posts as p', 'user_id', '=', 'id')->toSql();
+        $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
+        $this->assertStringContainsString('= p.id', $sql);
+    }
+
+    public function testJoinWithDottedColumnsUntouched(): void
+    {
+        $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->toSql();
+        $this->assertStringContainsString('= users.id', $sql);
     }
 
     public function testGroupBy(): void

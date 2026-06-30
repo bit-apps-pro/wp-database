@@ -268,12 +268,6 @@ Contact::query()
 // also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
 ```
 
-> **Joins are currently unreliable.** The join implementation has known bugs:
-> the joined table name is double-prefixed (`wp_wp_*`), ON-clause columns are not
-> adjusted when an alias is present, and `prepareOn` reuses the mutated column
-> value for the second-column lookup. Use raw SQL (`whereRaw` / `raw()`) until
-> these are fixed. See [Limitations](#limitations--known-issues).
-
 ### Limit / offset / pagination
 
 ```php
@@ -667,14 +661,6 @@ method relocation.
 ---
 
 ## Limitations & known issues
-
-- **Joins are broadly unreliable.** `join()` in `QueryBuilder` always prepends
-  `Connection::wpPrefix()` (plus the model prefix) onto the supplied table name,
-  causing a double prefix (`wp_wp_*`) unconditionally — not only when a plugin
-  prefix is set. Separately, `prepareOn()` reuses the mutated column value for the
-  second-column lookup, and ON-clause columns are not adjusted when an alias is
-  present. Workaround: write raw JOIN clauses via `raw()` and apply your own
-  prefix via `Connection::getPrefix()`.
 
 - **`belongsToMany` is declared but non-functional.** The method exists but
   contains no pivot-table join logic. Calling it does not produce a
