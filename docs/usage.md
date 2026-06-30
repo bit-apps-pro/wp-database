@@ -565,16 +565,12 @@ class Contact extends Model
 ```
 
 **Subscribable events** (registered via Closure using the methods below):
-`retrieved`, `saving`, `saved`, `updating`, `updated`, `deleting`, `deleted`.
+`retrieved`, `creating`, `created`, `saving`, `saved`, `updating`, `updated`, `deleting`, `deleted`.
 
 **Boot hooks** — override these protected static methods instead of registering
 a Closure: `booting()` (runs before `boot()`), `booted()` (runs after `boot()`).
 The `boot()` method itself is the standard entry point for registering event
 handlers.
-
-> `creating`/`created` events fire internally but have no public registrar —
-> they cannot be subscribed via `static::creating(...)` / `static::created(...)`.
-> Use `saving`/`saved` instead, which fire on both insert and update.
 
 > The `HasEvents` trait reserves the method names `boot`, `booting`, `booted`,
 > `fireEvent`, `fireCustomEvent`, `registerEvent` and the properties `$events`,
@@ -699,12 +695,6 @@ method relocation.
   `updated_at = VALUES(created_at)` instead of `VALUES(updated_at)`, so the
   timestamp may be wrong on update. Workaround: use separate `insert` + `update`
   calls where portability or correct timestamps are required.
-
-- **`creating`/`created` events cannot be subscribed.** These event names fire
-  internally during `insert()` but `HasEvents` provides no registrar methods for
-  them. Calling `static::creating(fn ...)` or `static::created(fn ...)` in
-  `boot()` will throw a fatal error. Use `saving`/`saved` instead — they fire
-  on both insert and update.
 
 - **Bulk `insert()` may return a bare array, not a `Collection`.** When the
   post-insert re-query that hydrates the inserted rows fails, the fallback path

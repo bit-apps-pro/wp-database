@@ -50,6 +50,16 @@ trait HasEvents
         static::registerEvent('retrieved', $callback);
     }
 
+    protected static function creating(Closure $callback)
+    {
+        static::registerEvent('creating', $callback);
+    }
+
+    protected static function created(Closure $callback)
+    {
+        static::registerEvent('created', $callback);
+    }
+
     protected static function saving(Closure $callback)
     {
         static::registerEvent('saving', $callback);
