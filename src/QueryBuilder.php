@@ -397,6 +397,28 @@ class QueryBuilder
     }
 
     /**
+     * Compiles this query as a single-column key subquery for a relation's
+     * IN (...) constraint: only $keyColumn is projected. Strips selectRaw (extra
+     * columns would break the operand count) and, unless a LIMIT pins the set,
+     * ORDER BY (meaningless for set membership and may reference a stripped raw
+     * select alias).
+     *
+     * @param string $keyColumn
+     *
+     * @return string
+     */
+    public function prepareKeySubquery($keyColumn): string
+    {
+        $clone            = clone $this;
+        $clone->selectRaw = ['columns' => [], 'bindings' => []];
+        if (!isset($clone->limit)) {
+            $clone->orderBy = [];
+        }
+
+        return $clone->select($keyColumn)->prepare();
+    }
+
+    /**
      * Adds column to select list
      *
      * @param array|string $columns

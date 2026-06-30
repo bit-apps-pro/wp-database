@@ -243,23 +243,6 @@ trait Relations
         return [$foreignKey, $localKey];
     }
 
-    /**
-     * Compiles the parent query as a single-column key subquery for a relation's
-     * IN (...) constraint. Strips the parent's selectRaw — that subquery must
-     * return exactly the key column, not the caller's extra raw expressions.
-     *
-     * @param string $keyColumn
-     *
-     * @return string
-     */
-    private function prepareKeySubquery(QueryBuilder $query, $keyColumn): string
-    {
-        $keyQuery            = clone $query;
-        $keyQuery->selectRaw = ['columns' => [], 'bindings' => []];
-
-        return $keyQuery->select($keyColumn)->prepare();
-    }
-
     private function retrieveRelateData(QueryBuilder $query)
     {
         $relations = $this->getRelations();
@@ -277,7 +260,7 @@ trait Relations
                 $relationQuery->whereRaw(
                     $relationKey['foreignKey']
                         . ' IN ( SELECT * FROM ('
-                        . $this->prepareKeySubquery($query, $relationKey['localKey'])
+                        . $query->prepareKeySubquery($relationKey['localKey'])
                         . ') AS subquery )'
                 );
 
@@ -300,7 +283,7 @@ trait Relations
         $relationQuery->whereRaw(
             $pivotRef . '.' . $pivot['foreignPivotKey']
                 . ' IN ( SELECT * FROM ('
-                . $this->prepareKeySubquery($query, $pivot['parentKey'])
+                . $query->prepareKeySubquery($pivot['parentKey'])
                 . ') AS subquery )'
         );
 

@@ -70,4 +70,33 @@ final class EagerLoadIntegrationTest extends TestCase
             $postsSql
         );
     }
+
+    /**
+     * ORDER BY is meaningless in a value-list IN ( SELECT key ... ) and may
+     * reference a stripped selectRaw alias — so it is dropped from the key
+     * subquery when no LIMIT pins the set.
+     */
+    public function testEagerLoadKeySubqueryDropsParentOrderBy(): void
+    {
+        User::select(['id'])->selectRaw('CONCAT("X", id) as cx')->orderBy('cx', 'DESC')->with('posts')->get();
+
+        $postsSql = $GLOBALS['wpdb']->queries[1];
+
+        $this->assertStringNotContainsString('ORDER BY', $postsSql);
+        $this->assertStringNotContainsString('cx', $postsSql);
+    }
+
+    /**
+     * When a LIMIT pins which parent rows the set comes from, ORDER BY is kept
+     * so the limited set stays deterministic.
+     */
+    public function testEagerLoadKeySubqueryKeepsOrderByWhenLimited(): void
+    {
+        User::orderBy('id', 'DESC')->take(5)->with('posts')->get();
+
+        $postsSql = $GLOBALS['wpdb']->queries[1];
+
+        $this->assertStringContainsString('ORDER BY', $postsSql);
+        $this->assertStringContainsString('LIMIT 5', $postsSql);
+    }
 }
