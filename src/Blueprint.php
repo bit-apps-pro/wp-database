@@ -43,8 +43,8 @@ use RuntimeException;
  * @method Blueprint float($name, $length = null)
  * @method Blueprint double($name, $length = null)
  * @method Blueprint double_precision($name, $length = null)
- * @method Blueprint decimal($name, $length = null)
- * @method Blueprint dec($name, $length = null)
+ * @method Blueprint decimal($name, $precision = null, $scale = null)
+ * @method Blueprint dec($name, $precision = null, $scale = null)
  * @method Blueprint date($name)
  * @method Blueprint datetime($name)
  * @method Blueprint timestamp($name)
@@ -116,7 +116,9 @@ class Blueprint
     {
         $formattedMethodName = strtoupper(str_replace('_', ' ', $method));
         if ($this->isValidType($formattedMethodName)) {
-            if (\count($parameters) > 2) {
+            // Only decimal/dec take a scale (name, precision, scale); others are name + length.
+            $maxParams = \in_array($method, ['decimal', 'dec'], true) ? 3 : 2;
+            if (\count($parameters) > $maxParams) {
                 throw new Exception('Too many parameters');
             }
 
@@ -204,6 +206,7 @@ class Blueprint
     {
         $queryToAdd[] = $this->addColumnQuery();
         $queryToAdd[] = $this->dropColumnQuery();
+        $queryToAdd[] = $this->renameColumnQuery();
         $queryToAdd   = $queryToAdd + $this->_edit;
         $queryToAdd[] = $this->addPrimaryKeyQuery();
         $queryToAdd[] = $this->addUniqueIndexQuery();
@@ -237,11 +240,13 @@ class Blueprint
         return $this;
     }
 
-    public function addColumn($name, $type, $length = null)
+    public function addColumn($name, $type, $length = null, $scale = null)
     {
         if ($this->method === 'addColumn') {
             $this->_sql = "ALTER TABLE {$this->table} ADD {$name} {$type}";
-            if ($length) {
+            if (!\is_null($scale)) {
+                $this->_sql .= "({$length}, {$scale})";
+            } elseif ($length) {
                 $this->_sql .= "({$length})";
             }
         } else {
@@ -250,7 +255,10 @@ class Blueprint
                 'name' => $name,
                 'type' => $type,
             ];
-            if (!\is_null($length)) {
+            if (!\is_null($scale)) {
+                $this->columns[$this->columnIndex]['precision'] = $length;
+                $this->columns[$this->columnIndex]['scale']     = $scale;
+            } elseif (!\is_null($length)) {
                 $this->length($length);
             }
         }
@@ -272,7 +280,7 @@ class Blueprint
     public function renameColumn($column, $newName)
     {
         if ($this->method === 'renameColumn') {
-            $this->_sql = "ALTER TABLE {$this->table} CHANGE {$column} {$newName}";
+            $this->_sql = "ALTER TABLE {$this->table} RENAME COLUMN {$column} TO {$newName}";
         } else {
             $this->columnsToRename[] = [
                 'column'   => $column,
@@ -292,7 +300,7 @@ class Blueprint
                     $query .= "\n, ";
                 }
 
-                $query .= "CHANGE {$column['column']} {$column['new_name']}";
+                $query .= "RENAME COLUMN {$column['column']} TO {$column['new_name']}";
             }
         }
 
@@ -637,7 +645,7 @@ class Blueprint
             $query .= $column['name'] . ' ' . $column['type'];
             if (!empty($column['length'])) {
                 $query .= '(' . $column['length'] . ')';
-            } elseif (!empty($column['precision']) && !empty($column['scale'])) {
+            } elseif (isset($column['precision'], $column['scale'])) {
                 $query .= '(' . $column['precision'] . ', ' . $column['scale'] . ')';
             } else {
                 $query .= ' ';
@@ -735,12 +743,13 @@ class Blueprint
             return '';
         }
 
-        $query = '';
+        $addPrefix = $this->method === 'edit' ? ' ADD ' : '';
+        $query     = '';
         foreach ($this->uniqueIndex as $key => $uniqueColumn) {
             if (\is_array($uniqueColumn)) {
-                $query .= "\nUNIQUE INDEX " . implode('_', $uniqueColumn) . '_UNIQUE (' . implode(',', $uniqueColumn) . '),';
+                $query .= "\n" . $addPrefix . 'UNIQUE INDEX ' . implode('_', $uniqueColumn) . '_UNIQUE (' . implode(',', $uniqueColumn) . '),';
             } else {
-                $query .= "\nUNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
+                $query .= "\n" . $addPrefix . "UNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
             }
         }
 

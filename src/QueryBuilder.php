@@ -762,7 +762,11 @@ class QueryBuilder
      */
     public function groupBy($columns)
     {
-        $columns       = \is_array($columns) ? $columns : \func_get_args();
+        $columns = \is_array($columns) ? $columns : \func_get_args();
+        foreach ($columns as $column) {
+            $this->assertSafeIdentifier($column);
+        }
+
         $this->groupBy = array_merge($this->groupBy, $columns);
 
         return $this;
@@ -929,6 +933,8 @@ class QueryBuilder
      */
     public function orderBy($column)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->orderBy[] = [
             'column'    => $column,
             'direction' => 'ASC',
@@ -1707,6 +1713,23 @@ class QueryBuilder
     }
 
     /**
+     * Guards an ORDER BY / GROUP BY column against injection: only a plain,
+     * qualified (table.column) or back-ticked identifier is accepted. Raw
+     * expressions must go through orderByRaw(). Valid identifiers are not
+     * re-rendered, so the emitted SQL stays byte-identical.
+     *
+     * @param mixed $column
+     *
+     * @return void
+     */
+    private function assertSafeIdentifier($column)
+    {
+        if (!\is_string($column) || !preg_match('/^[A-Za-z0-9_.`]+$/', $column)) {
+            throw new RuntimeException('Unsafe column passed to order/group by clause.');
+        }
+    }
+
+    /**
      * Returns true when the model declares soft-delete support.
      *
      * @return bool
@@ -1754,13 +1777,18 @@ class QueryBuilder
         $sql .= ' VALUES ';
         $values = [];
         foreach ($attributes as $row) {
-            ksort($row);
             if ($createdAt) {
                 $row['created_at'] = $this->currentTimestamp();
             }
 
-            $rowValues = array_values($row);
-            $values[]  = ' ('
+            // Align each row to the header columns by key so rows with differing
+            // keys are not positionally misaligned (absent column => NULL).
+            $rowValues = [];
+            foreach ($columns as $column) {
+                $rowValues[] = isset($row[$column]) ? $row[$column] : null;
+            }
+
+            $values[] = ' ('
                 . implode(
                     ', ',
                     array_map(
@@ -1828,6 +1856,8 @@ class QueryBuilder
             $columnsToPrepare = array_keys($this->_model->getAttributes());
         }
 
+        $columnsToPrepare = $this->withoutRelationColumns($columnsToPrepare);
+
         if (property_exists($this->_model, 'timestamps') && $this->_model->timestamps) {
             if (!$isUpdate) {
                 $this->_model->setAttribute('created_at', $this->currentTimestamp());
@@ -1854,6 +1884,25 @@ class QueryBuilder
         $this->_method = $isUpdate ? self::UPDATE : self::INSERT;
 
         return $columnsToPrepare;
+    }
+
+    /**
+     * Drops columns whose current value is a loaded relation (Collection/Model)
+     * from a save/update write set, so lazily-read relations are never persisted
+     * to a non-existent column. Re-indexes to keep bindings positionally aligned.
+     *
+     * @param array $columns
+     *
+     * @return array
+     */
+    private function withoutRelationColumns(array $columns)
+    {
+        $attributes = $this->_model->getAttributes();
+
+        return array_values(array_filter($columns, function ($column) use ($attributes) {
+            return !\array_key_exists($column, $attributes)
+                || !$this->_model->isRelationValue($attributes[$column]);
+        }));
     }
 
     /**

@@ -385,7 +385,33 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     public function getDirtyAttributes()
     {
-        return $this->dirty;
+        if (!\is_array($this->dirty)) {
+            return $this->dirty;
+        }
+
+        return array_filter($this->dirty, function ($value) {
+            return !$this->isRelationValue($value);
+        });
+    }
+
+    /**
+     * True when a value is a loaded relation (a Collection, a related Model, or
+     * a list whose first element is one) rather than a persistable column value.
+     * A plain JSON array of scalars is NOT a relation and is still written.
+     *
+     * @param mixed $value
+     *
+     * @return bool
+     */
+    public function isRelationValue($value)
+    {
+        if ($value instanceof Collection || $value instanceof Model) {
+            return true;
+        }
+
+        return \is_array($value)
+            && isset($value[0])
+            && ($value[0] instanceof Model || $value[0] instanceof Collection);
     }
 
     public function getOriginal()
@@ -547,15 +573,37 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return $value;
         }
 
-        if (
-            !isset($this->casts)
-            || (isset($this->casts) && !isset($this->casts[$column]))
-            || !method_exists($this, 'castTo' . ucfirst($this->casts[$column]))
-        ) {
+        if (!isset($this->casts) || !isset($this->casts[$column])) {
             return $value;
         }
 
-        return \call_user_func([$this, 'castTo' . ucfirst($this->casts[$column])], $value);
+        $caster = $this->resolveCastMethod($this->casts[$column]);
+        if (!method_exists($this, $caster)) {
+            return $value;
+        }
+
+        return \call_user_func([$this, $caster], $value);
+    }
+
+    /**
+     * Resolves a cast name to its caster method, mapping the documented aliases
+     * (integer/float/double/json/datetime) onto the existing casters.
+     *
+     * @param string $cast
+     *
+     * @return string
+     */
+    private function resolveCastMethod($cast)
+    {
+        $aliases = [
+            'integer'  => 'castToInt',
+            'float'    => 'castToFloat',
+            'double'   => 'castToFloat',
+            'json'     => 'castToArray',
+            'datetime' => 'castToDate',
+        ];
+
+        return isset($aliases[$cast]) ? $aliases[$cast] : 'castTo' . ucfirst($cast);
     }
 
     private function castToObject($value)
@@ -579,6 +627,11 @@ abstract class Model implements ArrayAccess, JsonSerializable
     private function castToInt($value)
     {
         return (int) $value;
+    }
+
+    private function castToFloat($value)
+    {
+        return (float) $value;
     }
 
     private function castToString($value)
