@@ -375,6 +375,14 @@ Contact::destroy([1, 2, 3]);               // delete by primary keys
   `public $soft_delete_scope = true;` to enable automatic filtering: reads exclude
   trashed rows, `->withTrashed()` includes them, `->onlyTrashed()` returns only
   trashed rows. See [Limitations](#limitations--known-issues).
+- On a soft-delete model, `forceDelete()` emits a real `DELETE` (bypassing the
+  soft rewrite) and `restore()` clears `deleted_at`. Both throw on a model
+  without `$soft_deletes`.
+
+```php
+Contact::where('id', 1)->forceDelete();    // real DELETE, even for soft-delete models
+Contact::onlyTrashed()->where('id', 1)->restore();  // deleted_at = NULL
+```
 
 ---
 

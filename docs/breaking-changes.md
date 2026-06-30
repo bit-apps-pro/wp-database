@@ -323,6 +323,18 @@ Not signature breaks, but observable runtime differences.
   `wp_json_encode`, matching `save()`/`update()`. Previously a multi-row
   `insert([[...]])` or `upsert()` bound an array as the literal `"Array"` and an
   object threw — both repaired. Scalar values are unchanged.
+- **Invalid-SQL / crash repairs (output changes only for previously-broken
+  input; working inputs are byte-identical):** `whereIn('c', [])` / `where('c',
+  [])` now emit `0 = 1` (was invalid `IN ()`); `where('c', '=', null)` and other
+  operator+null forms emit `IS [NOT] NULL` (was a truncated, value-less clause);
+  a `where`/`whereIn` value that is an object or a nested array is `wp_json_encode`d
+  (was a fatal / binding mismatch); `aggregate(fn, '*')` emits `COUNT(*)` (was
+  invalid `COUNT(\`t\`.*)`); an empty `save()` (no changed columns) skips the
+  query and returns the model (was a malformed `UPDATE … SET`); `insert([])`,
+  empty bulk rows, and `upsert($v, [])` no longer emit malformed SQL; a single
+  `insert()` row whose first value is an array no longer crashes.
+- **`take()` / `skip()` cast their argument to `int`** — blocks `LIMIT`/`OFFSET`
+  injection; numeric input is byte-identical.
 - **`join()` table prefix corrected for custom-`$prefix` models.** Join (and
   pivot) tables now carry the model's **full** table prefix via the new
   `Model::getTablePrefix()` (`wp_` plus the plugin prefix), matching the model's
@@ -426,6 +438,9 @@ User::query()->with('posts')->where('active', 1)->get();
   `getPrefix()`, `getTablePrefix()` (full table prefix — `wp_` + plugin prefix —
   for join/pivot table names), `withCast(array $casts)`, `bool`/`boolean` cast.
 - **Connection:** `startTransaction()`, `commit()`, `rollback()`.
+- **Model (soft-delete):** `forceDelete()` (real `DELETE`, bypasses the soft
+  rewrite) and `restore()` (clears `deleted_at`). Both throw on a non-soft-delete
+  model.
 - **Blueprint:** `unique($column = null)` — optional arg (backward compatible)
   for composite/explicit unique indexes.
 - **QueryBuilder:** `static $TIME_ZONE` to set the timezone statically; `$select`
