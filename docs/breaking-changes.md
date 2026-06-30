@@ -335,6 +335,15 @@ Not signature breaks, but observable runtime differences.
   `insert()` row whose first value is an array no longer crashes.
 - **`take()` / `skip()` cast their argument to `int`** — blocks `LIMIT`/`OFFSET`
   injection; numeric input is byte-identical.
+- **`orderBy()` / `groupBy()` validate the column** as a plain identifier
+  (`^[A-Za-z0-9_.`]+$`) and throw `RuntimeException` otherwise — blocks
+  `ORDER BY`/`GROUP BY` injection. Plain/qualified identifiers emit byte-identical
+  SQL; pass raw expressions through `orderByRaw()`.
+- **Cast aliases `integer`/`float`/`double`/`json`/`datetime` now work** (map onto
+  the existing casters) — they were previously silent no-ops returning the raw value.
+- **Bulk `insert()` aligns ragged rows by column** — a row whose keys differ from
+  the first row no longer silently shifts values into the wrong columns (uniform
+  rows unchanged).
 - **`join()` table prefix corrected for custom-`$prefix` models.** Join (and
   pivot) tables now carry the model's **full** table prefix via the new
   `Model::getTablePrefix()` (`wp_` plus the plugin prefix), matching the model's
