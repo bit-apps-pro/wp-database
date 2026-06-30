@@ -54,6 +54,36 @@ final class EagerLoadIntegrationTest extends TestCase
     }
 
     /**
+     * A parent with NO related rows must not trigger a fresh lazy query when the
+     * relation is accessed (the eager load already resolved it to empty) — the
+     * N+1 the eager load exists to prevent.
+     */
+    public function testEmptyEagerRelationDoesNotReQueryOnAccess(): void
+    {
+        $GLOBALS['wpdb']->resolver = static function ($sql) {
+            if (strpos($sql, 'wp_posts') !== false) {
+                return [(object) ['id' => 10, 'user_id' => 1]];
+            }
+
+            return [(object) ['id' => 1], (object) ['id' => 2]];
+        };
+
+        $users = User::with('posts')->get();
+        $second = null;
+        foreach ($users as $u) {
+            if ((int) $u->id === 2) {
+                $second = $u;
+            }
+        }
+
+        $GLOBALS['wpdb']->queries = [];
+        $posts = $second->posts; // user 2 has no posts
+
+        $this->assertCount(0, $posts, 'empty eager relation resolves to empty');
+        $this->assertCount(0, $GLOBALS['wpdb']->queries, 'no re-query (N+1) on accessing an empty eager relation');
+    }
+
+    /**
      * The parent's selectRaw must NOT leak into the eager key subquery — that
      * subquery feeds an IN (...) and must return exactly one column (the localKey),
      * else MySQL raises "Operand should contain 1 column(s)".

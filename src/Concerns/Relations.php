@@ -342,9 +342,11 @@ trait Relations
 
                 $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
+                // empty relations store [] (not null) so accessing them returns the
+                // resolved-empty result instead of falling through to a lazy re-query (N+1).
                 $data = isset(
                     $this->_relatedData[$relationName][$model->getAttribute($relationKey['localKey'])]
-                ) ? $this->_relatedData[$relationName][$model->getAttribute($relationKey['localKey'])] : null;
+                ) ? $this->_relatedData[$relationName][$model->getAttribute($relationKey['localKey'])] : [];
 
                 if ($relationQuery->getModel()->getRelateAs() === 'oneToOne' && is_countable($data) && \count($data)) {
                     $data = $data[0];
@@ -363,7 +365,7 @@ trait Relations
         $key   = $model->getAttribute($pivot['parentKey']);
         $data  = isset($this->_relatedData[$relationName][$key])
             ? $this->_relatedData[$relationName][$key]
-            : null;
+            : [];
 
         [$name, $alias] = $this->prepareRelationName($relationName);
         $model->setAttribute(\is_null($alias) ? $name : $alias, $data);

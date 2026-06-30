@@ -344,6 +344,12 @@ Not signature breaks, but observable runtime differences.
 - **Bulk `insert()` aligns ragged rows by column** — a row whose keys differ from
   the first row no longer silently shifts values into the wrong columns (uniform
   rows unchanged).
+- **Eager-loaded empty relations resolve to `[]` without a re-query.** A parent
+  with no related rows previously stored `null`, so accessing the relation fired a
+  fresh lazy query (an N+1) that returned an empty `Collection`. It now holds `[]`
+  directly — no extra query. The value is empty either way (`count()` 0, falsy);
+  the type for an empty eager relation is now a plain array, matching a non-empty
+  eager relation.
 - **`join()` table prefix corrected for custom-`$prefix` models.** Join (and
   pivot) tables now carry the model's **full** table prefix via the new
   `Model::getTablePrefix()` (`wp_` plus the plugin prefix), matching the model's
