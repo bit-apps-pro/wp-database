@@ -81,6 +81,8 @@ class QueryBuilder
 
     private $_onlyTrashed = false;
 
+    private $_forceDelete = false;
+
     /**
      * Constructs QueryBuilder
      *
@@ -411,6 +413,8 @@ class QueryBuilder
     {
         $clone            = clone $this;
         $clone->selectRaw = ['columns' => [], 'bindings' => []];
+        $clone->groupBy   = [];
+        $clone->having    = [];
         if (!isset($clone->limit)) {
             $clone->orderBy = [];
         }
@@ -600,6 +604,14 @@ class QueryBuilder
      */
     public function whereIn($column, $value)
     {
+        if (\is_array($value)) {
+            if ($value === []) {
+                return $this->whereRaw('0 = 1');
+            }
+
+            $value = $this->sanitizeInValues($value);
+        }
+
         $this->where[] = [
             'column'   => $column,
             'value'    => $value,
@@ -1023,7 +1035,7 @@ class QueryBuilder
      */
     public function take($count)
     {
-        $this->limit = $count;
+        $this->limit = (int) $count;
 
         return $this;
     }
@@ -1037,7 +1049,7 @@ class QueryBuilder
      */
     public function skip($count)
     {
-        $this->offset = $count;
+        $this->offset = (int) $count;
 
         return $this;
     }
@@ -1051,7 +1063,11 @@ class QueryBuilder
      */
     public function insert($attributes = [])
     {
-        if (\is_array(reset($attributes))) {
+        if (empty($attributes)) {
+            return false;
+        }
+
+        if ($this->isListOfRows($attributes)) {
             return $this->bulkInsert($attributes);
         }
 
@@ -1111,6 +1127,12 @@ class QueryBuilder
         $columns = $this->prepareAttributeForSaveOrUpdate($this->_model->exists());
         $pk      = $this->_model->getPrimaryKey();
         if ($this->_model->exists()) {
+            if (empty($columns)) {
+                $this->_model->fireEvent('saved');
+
+                return $this->_model;
+            }
+
             $isPkExistsInWhere = false;
 
             $pkValue = $this->_model->getAttribute($pk);
@@ -1172,7 +1194,8 @@ class QueryBuilder
         $query            = $this->clone();
         $query->select    = [];
         $query->selectRaw = ['columns' => [], 'bindings' => []];
-        $result           = $query->selectRaw($function . '(' . $query->prepareColumnName($column) . ') as ' . $function)->exec();
+        $preparedColumn   = $column === '*' ? '*' : $query->prepareColumnName($column);
+        $result           = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
 
         return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
@@ -1185,6 +1208,37 @@ class QueryBuilder
         }
 
         return $this->exec();
+    }
+
+    /**
+     * Permanently deletes the targeted rows of a soft-delete model, bypassing
+     * the soft-delete rewrite (emits a real DELETE).
+     *
+     * @return string|bool
+     */
+    public function forceDelete()
+    {
+        if (!$this->isSoftDeleteModel()) {
+            throw new RuntimeException('forceDelete() is only available on soft-delete models.');
+        }
+
+        $this->_forceDelete = true;
+
+        return $this->delete();
+    }
+
+    /**
+     * Restores soft-deleted rows by nulling deleted_at and persisting.
+     *
+     * @return string|bool|Model
+     */
+    public function restore()
+    {
+        if (!$this->isSoftDeleteModel()) {
+            throw new RuntimeException('restore() is only available on soft-delete models.');
+        }
+
+        return $this->update(['deleted_at' => null]);
     }
 
     /**
@@ -1299,7 +1353,7 @@ class QueryBuilder
             $values = [$values];
         }
 
-        if (\is_null($update)) {
+        if (empty($update)) {
             $update = array_keys($values[0]);
         }
 
@@ -1442,7 +1496,7 @@ class QueryBuilder
             $conditions['bool']                                       = $params[3];
         }
 
-        return $conditions;
+        return $this->normalizeConditions($conditions, $type);
     }
 
     /**
@@ -1541,6 +1595,118 @@ class QueryBuilder
     }
 
     /**
+     * Coerces each IN-list element to a scalar so it maps to exactly one
+     * placeholder and one binding (a nested array/object is JSON-encoded, never
+     * flattened into multiple bindings).
+     *
+     * @param array $values
+     *
+     * @return array
+     */
+    private function sanitizeInValues(array $values)
+    {
+        return array_map(
+            function ($value) {
+                if (\is_array($value) || \is_object($value)) {
+                    return wp_json_encode($value);
+                }
+
+                return $value;
+            },
+            $values
+        );
+    }
+
+    /**
+     * True only when $attributes is a non-empty positional list whose every
+     * element is itself an array (a list of rows for bulk insert). An assoc row
+     * whose first value happens to be an array must take the single-row path.
+     *
+     * @param mixed $attributes
+     *
+     * @return bool
+     */
+    private function isListOfRows($attributes)
+    {
+        if (!\is_array($attributes) || $attributes === []) {
+            return false;
+        }
+
+        if (array_keys($attributes) !== range(0, \count($attributes) - 1)) {
+            return false;
+        }
+
+        foreach ($attributes as $row) {
+            if (!\is_array($row)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Repairs where-clause values that would otherwise emit invalid SQL or fatal
+     * on prepare, independent of arity: an empty array becomes the false
+     * constant `0 = 1`; a null value with an explicit operator becomes
+     * IS [NOT] NULL; a non-empty array has its elements coerced to scalars; an
+     * object value is JSON-encoded. Having clauses are left untouched.
+     *
+     * @param array  $conditions
+     * @param string $type
+     *
+     * @return array
+     */
+    private function normalizeConditions(array $conditions, $type)
+    {
+        if ($type !== 'where' || !\array_key_exists('value', $conditions)) {
+            return $conditions;
+        }
+
+        $value = $conditions['value'];
+        $bool  = isset($conditions['bool']) ? $conditions['bool'] : 'AND';
+
+        if (\is_array($value)) {
+            if ($value === []) {
+                return ['bool' => $bool, 'raw' => '0 = 1', 'bindings' => []];
+            }
+
+            $conditions['value'] = $this->sanitizeInValues($value);
+
+            return $conditions;
+        }
+
+        if (\is_null($value)) {
+            if (isset($conditions['operator'])) {
+                unset($conditions['value']);
+                $conditions['operator'] = $this->nullOperator($conditions['operator']);
+            }
+
+            return $conditions;
+        }
+
+        if (\is_object($value)) {
+            $conditions['value'] = wp_json_encode($value);
+        }
+
+        return $conditions;
+    }
+
+    /**
+     * Maps a comparison operator to its null-safe form for a null value.
+     *
+     * @param string $operator
+     *
+     * @return string
+     */
+    private function nullOperator($operator)
+    {
+        $negations = ['!=', '<>', 'NOT', 'IS NOT', 'IS NOT NULL'];
+
+        return \in_array($operator, $negations, true) ? 'IS NOT NULL' : 'IS NULL';
+    }
+
+    /**
      * Returns true when the model declares soft-delete support.
      *
      * @return bool
@@ -1570,6 +1736,10 @@ class QueryBuilder
     private function bulkInsert($attributes)
     {
         $firstRow = reset($attributes);
+        if (empty($firstRow)) {
+            return new Collection([]);
+        }
+
         ksort($firstRow);
         $columns   = array_keys($firstRow);
         $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
@@ -1758,7 +1928,7 @@ class QueryBuilder
             return '';
         }
 
-        if (property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes) {
+        if (!$this->_forceDelete && property_exists($this->_model, 'soft_deletes') && $this->_model->soft_deletes) {
             $timestamp = $this->currentTimestamp();
             array_unshift($this->bindings, $timestamp);
 

@@ -86,6 +86,8 @@ use RuntimeException;
  * @method static mixed                         max($column)
  * @method static mixed                         min($column)
  * @method static bool|string                   delete()
+ * @method static string|bool                   forceDelete()
+ * @method static string|bool|Model             restore()
  * @method static string                        toSql()
  * @method static string                        prepare($sql = null)
  * @method static QueryBuilder                  withTrashed()
