@@ -267,12 +267,6 @@ Schema::edit('orders', function ($table) {
 
 ### Drop helpers
 
-Only `dropColumn` and `renameColumn` produce complete SQL when called as a direct static
-call (e.g. `Schema::dropColumn('orders', 'legacy_notes')`). The remaining helpers —
-`dropTimestamps`, `dropIndex`, `dropUnique`, `dropForeign`, and `dropPrimary` — must be
-used inside a `Schema::edit()` callback; a direct static call only emits the
-`ALTER TABLE` header with no `DROP` clause.
-
 | Method | Emitted SQL |
 |---|---|
 | `dropColumn($column)` | `DROP $column` |
@@ -329,9 +323,3 @@ Schema::withPrefix('custom_')->create('orders', function ($table) {
   `null`, not `''`; no prefix is prepended unless you call `Schema::withPrefix()` first.
   To use the WordPress prefix, pass it explicitly:
   `Schema::withPrefix($wpdb->prefix)->create(...)`.
-
-- **`dropTimestamps()`, `dropIndex()`, `dropUnique()`, `dropForeign()`, `dropPrimary()`
-  must be used inside a `Schema::edit()` callback.** A direct static call (e.g.
-  `Schema::dropTimestamps('orders')`) only sets the `ALTER TABLE` header and emits no
-  `DROP` clause, producing a syntax error. Only `dropColumn()` and `renameColumn()`
-  produce complete SQL when called directly.

@@ -499,83 +499,35 @@ class Blueprint
 
     public function dropForeign($keys)
     {
-        if ($this->method === 'dropForeign') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $sql     = '';
-            $idCount = \count($keys) - 1;
-            $i       = 0;
-            if (\is_array($keys)) {
-                foreach ($keys as $key) {
-                    if ($i == $idCount) {
-                        $sql .= " DROP FOREIGN KEY `{$key}`";
-                    } else {
-                        $sql .= " DROP FOREIGN KEY `{$key}`,";
-                    }
-
-                    $i++;
-                }
-            } else {
-                $sql .= " DROP FOREIGN KEY `{$keys}`";
-            }
-
-            $this->_edit['dropForeign'] = $sql;
-        }
+        $this->applyDropClause('dropForeign', 'dropForeign', $this->buildDropForeignClause($keys));
 
         return $this;
     }
 
     public function dropIndex($indexes)
     {
-        if ($this->method === 'dropIndex') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $sql     = '';
-            $idCount = \count($indexes) - 1;
-            $i       = 0;
-            if (\is_array($indexes)) {
-                foreach ($indexes as $index) {
-                    if ($i == $idCount) {
-                        $sql .= " DROP INDEX `{$index}`";
-                    } else {
-                        $sql .= " DROP INDEX `{$index}`,";
-                    }
-
-                    $i++;
-                }
-            } else {
-                $sql .= " DROP INDEX `{$indexes}`";
-            }
-
-            $this->_edit['dropIndex'] = $sql;
-        }
+        $this->applyDropClause('dropIndex', 'dropIndex', $this->buildDropIndexClause($indexes));
 
         return $this;
     }
 
     public function dropPrimary()
     {
-        if ($this->method === 'dropPrimary') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $this->_edit['dropPrimary'] = ' DROP PRIMARY KEY';
-        }
+        $this->applyDropClause('dropPrimary', 'dropPrimary', ' DROP PRIMARY KEY');
 
         return $this;
     }
 
     public function dropUnique($indexes)
     {
-        return $this->dropIndex($indexes);
+        $this->applyDropClause('dropUnique', 'dropIndex', $this->buildDropIndexClause($indexes));
+
+        return $this;
     }
 
     public function dropTimestamps()
     {
-        if ($this->method === 'dropTimestamps') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $this->_edit['dropTimestamps'] = ' DROP COLUMN created_at, DROP COLUMN updated_at';
-        }
+        $this->applyDropClause('dropTimestamps', 'dropTimestamps', ' DROP COLUMN created_at, DROP COLUMN updated_at');
 
         return $this;
     }
@@ -594,6 +546,43 @@ class Blueprint
         $this->columns[$this->columnIndex]['length'] = $length;
 
         return $this;
+    }
+
+    private function buildDropIndexClause($indexes)
+    {
+        if (\is_array($indexes)) {
+            $clauses = [];
+            foreach ($indexes as $index) {
+                $clauses[] = " DROP INDEX `{$index}`";
+            }
+
+            return implode(',', $clauses);
+        }
+
+        return " DROP INDEX `{$indexes}`";
+    }
+
+    private function buildDropForeignClause($keys)
+    {
+        if (\is_array($keys)) {
+            $clauses = [];
+            foreach ($keys as $key) {
+                $clauses[] = " DROP FOREIGN KEY `{$key}`";
+            }
+
+            return implode(',', $clauses);
+        }
+
+        return " DROP FOREIGN KEY `{$keys}`";
+    }
+
+    private function applyDropClause($directMethod, $editKey, $clause)
+    {
+        if ($this->method === $directMethod) {
+            $this->_sql = "ALTER TABLE `{$this->table}`" . $clause;
+        } else {
+            $this->_edit[$editKey] = $clause;
+        }
     }
 
     private function getCollation()
