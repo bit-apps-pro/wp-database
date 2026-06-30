@@ -315,6 +315,16 @@ Not signature breaks, but observable runtime differences.
   (legacy null-pivot path). Any call passing positional arg 2+ now takes the
   pivot path, treating arg 2 as the pivot table name. Zero known callers across
   consumers; flagged for completeness.
+- **Bulk `insert()` and `upsert()` now JSON-encode array/object values** via
+  `wp_json_encode`, matching `save()`/`update()`. Previously a multi-row
+  `insert([[...]])` or `upsert()` bound an array as the literal `"Array"` and an
+  object threw — both repaired. Scalar values are unchanged.
+- **`join()` table prefix corrected for custom-`$prefix` models.** Join (and
+  pivot) tables now carry the model's **full** table prefix via the new
+  `Model::getTablePrefix()` (`wp_` plus the plugin prefix), matching the model's
+  own table. Default-`$prefix` models are unchanged (`getTablePrefix()` equals
+  `getPrefix()` there); custom-`$prefix` models that previously lost `wp_` on
+  joins now match their own table.
 
 ---
 
@@ -409,7 +419,8 @@ User::query()->with('posts')->where('active', 1)->get();
   `when()`, `toSql()`, `clone()`, `aggregate()`, `prepareColumnName()`,
   `withCast()` (chainable), and `__call()` forwarding to the bound model.
 - **Model:** `query()` (canonical static builder entry), `toArray()`,
-  `getPrefix()`, `withCast(array $casts)`, `bool`/`boolean` cast.
+  `getPrefix()`, `getTablePrefix()` (full table prefix — `wp_` + plugin prefix —
+  for join/pivot table names), `withCast(array $casts)`, `bool`/`boolean` cast.
 - **Connection:** `startTransaction()`, `commit()`, `rollback()`.
 - **Blueprint:** `unique($column = null)` — optional arg (backward compatible)
   for composite/explicit unique indexes.

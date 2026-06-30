@@ -154,6 +154,10 @@ $created = Contact::insert([
 `save()` inserts when the model is new and updates (dirty attributes only) when
 it already exists. On success it returns the model; on failure, `false`.
 
+Array and object values are JSON-encoded (`wp_json_encode`) automatically across
+`save()`, `update()`, single-row and bulk `insert()`, and `upsert()` — pass the
+raw array/object, not a pre-encoded string.
+
 ---
 
 ## Reading records
@@ -267,6 +271,10 @@ Contact::query()
     ->get();
 // also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
 ```
+
+Pass **unprefixed** table names — `join()` prepends the model's full table prefix
+(the same one the model's own table uses, including `wp_` for models with a custom
+`$prefix`). Qualify the `ON` columns as `table.column`.
 
 ### Limit / offset / pagination
 
@@ -739,9 +747,6 @@ method relocation.
     `RuntimeException` (the pivot metadata has no single `foreignKey`/`localKey`).
   - No `attach`/`detach`/`sync` (write side is out of scope).
   - Single-column pivot/parent/related keys only — no composite keys.
-  - A non-empty model `$prefix` combined with a pivot table is unsupported (the
-    inherited `join()` prefixing quirk mis-prefixes the pivot table). The
-    default empty-`$prefix` case is correct.
   - Duplicate pivot rows yield duplicate related models (no `DISTINCT`).
   - Eager constraint closures may add `where`/`orderBy`/`limit` but **cannot**
     narrow the selected columns — the pivot path always selects `related.*` so
