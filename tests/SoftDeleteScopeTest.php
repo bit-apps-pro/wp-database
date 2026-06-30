@@ -72,4 +72,36 @@ final class SoftDeleteScopeTest extends TestCase
         $this->assertStringContainsString('deleted_at', $sql);
         $this->assertStringContainsString('IS NULL', $sql);
     }
+
+    // scope + orWhere: user conditions must be parenthesized to prevent precedence leak
+    public function testScopedModelOrWhereGroupsUserConditions(): void
+    {
+        $sql = ScopedSoftPost::query()
+            ->where('status', 'active')
+            ->orWhere('status', 'pending')
+            ->toSql();
+
+        // scope clause must be outside the OR group
+        $this->assertStringContainsString('deleted_at', $sql);
+        $this->assertStringContainsString('IS NULL', $sql);
+        // user conditions must be parenthesized
+        $this->assertMatchesRegularExpression('/\(.*status.*OR.*status.*\)/s', $sql);
+        // scope must appear after the closing parenthesis (column may be backtick-quoted)
+        $this->assertMatchesRegularExpression('/\).*deleted_at.*IS\s+NULL/s', $sql);
+    }
+
+    // onlyTrashed + orWhere: same grouping requirement
+    public function testOnlyTrashedOrWhereGroupsUserConditions(): void
+    {
+        $sql = ScopedSoftPost::query()
+            ->where('status', 'active')
+            ->orWhere('status', 'pending')
+            ->onlyTrashed()
+            ->toSql();
+
+        $this->assertStringContainsString('deleted_at', $sql);
+        $this->assertStringContainsString('IS NOT NULL', $sql);
+        $this->assertMatchesRegularExpression('/\(.*status.*OR.*status.*\)/s', $sql);
+        $this->assertMatchesRegularExpression('/\).*deleted_at.*IS\s+NOT\s+NULL/s', $sql);
+    }
 }

@@ -258,16 +258,33 @@ class QueryBuilder
             return $this->having;
         }
 
-        $where = $this->where;
-        if ($this->isSoftDeleteModel() && $this->_method === self::SELECT) {
-            if ($this->_onlyTrashed) {
-                $where[] = ['column' => 'deleted_at', 'operator' => 'IS NOT NULL'];
-            } elseif ($this->autoScopeEnabled() && !$this->_withTrashed) {
-                $where[] = ['column' => 'deleted_at', 'operator' => 'IS NULL'];
-            }
+        if (!$this->isSoftDeleteModel() || $this->_method !== self::SELECT) {
+            return $this->where;
         }
 
-        return $where;
+        $scopeClause = null;
+        if ($this->_onlyTrashed) {
+            $scopeClause = ['column' => 'deleted_at', 'operator' => 'IS NOT NULL'];
+        } elseif ($this->autoScopeEnabled() && !$this->_withTrashed) {
+            $scopeClause = ['column' => 'deleted_at', 'operator' => 'IS NULL'];
+        }
+
+        if ($scopeClause === null) {
+            return $this->where;
+        }
+
+        if (empty($this->where)) {
+            return [$scopeClause];
+        }
+
+        // Wrap user conditions to prevent AND/OR precedence issues with the injected scope
+        $nestedQuery        = $this->newQuery();
+        $nestedQuery->where = $this->where;
+
+        return [
+            ['query' => $nestedQuery],
+            $scopeClause,
+        ];
     }
 
     /**
