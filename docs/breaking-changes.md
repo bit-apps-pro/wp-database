@@ -309,6 +309,12 @@ Not signature breaks, but observable runtime differences.
   prior behavior that left `updated_at` untouched and mapped
   `updated_at = VALUES(created_at)`. The generated SQL changes for upsert on
   timestamped models.
+- **`belongsToMany()` positional args 2 and 3 changed meaning** — from
+  `(foreignKey, localKey)` to `(pivotTable, foreignPivotKey)` (see §4.6).
+  `belongsToMany($model)` with no extra args is **byte-identical** to before
+  (legacy null-pivot path). Any call passing positional arg 2+ now takes the
+  pivot path, treating arg 2 as the pivot table name. Zero known callers across
+  consumers; flagged for completeness.
 
 ---
 
@@ -409,6 +415,34 @@ User::query()->with('posts')->where('active', 1)->get();
   for composite/explicit unique indexes.
 - **QueryBuilder:** `static $TIME_ZONE` to set the timezone statically; `$select`
   / `$selectRaw` are now `public` (were `protected`).
+
+### 4.6 Real pivot-table many-to-many on `belongsToMany`
+
+`belongsToMany` now resolves a true many-to-many relation through a pivot
+(junction) table for **reads** — eager `with()` and lazy `$model->relation`:
+
+```php
+public function roles()
+{
+    return $this->belongsToMany(Role::class, 'role_user', 'member_id', 'role_id');
+}
+
+Member::with('roles')->get();   // eager
+$member->roles;                 // lazy
+```
+
+Full signature
+`belongsToMany($model, $pivotTable = null, $foreignPivotKey = null, $relatedPivotKey = null, $parentKey = null, $relatedKey = null)`.
+Omitted keys derive from the package FK convention (`members_id`, `roles_id`).
+`withPivot([...])` selects extra pivot columns, exposed flat on each related
+model as `pivot_<col>` attributes (the parent link is always exposed as
+`pivot_<foreignPivotKey>`). When `$pivotTable` is `null` the method keeps its
+**legacy** behaviour (resolves like `hasMany`), so existing `belongsToMany($model)`
+calls are unaffected.
+
+Out of scope (read-only): `attach`/`detach`/`sync`, and
+`withCount`/`whereHas`/aggregates over a pivot relation (these throw
+`RuntimeException`). See the usage doc's Limitations for the full list.
 
 ---
 

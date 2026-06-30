@@ -7,8 +7,10 @@
 
 namespace BitApps\WPDatabase\Concerns;
 
+use BitApps\WPDatabase\Model;
 use BitApps\WPDatabase\QueryBuilder;
 use Closure;
+use RuntimeException;
 
 if (!\defined('ABSPATH')) {
     exit;
@@ -33,6 +35,21 @@ trait QueriesRelationships
     public function with($relation, $callback = null)
     {
         $this->_model->addRelation($this->resolveRelations($relation, $callback));
+
+        return $this;
+    }
+
+    /**
+     * Selects extra pivot-table columns for a pivot belongsToMany relation.
+     * They surface flat on each related model as `pivot_<column>` attributes.
+     *
+     * @param array|string $columns
+     *
+     * @return $this
+     */
+    public function withPivot($columns)
+    {
+        $this->_model->addPivotColumns(\is_array($columns) ? $columns : \func_get_args());
 
         return $this;
     }
@@ -284,6 +301,10 @@ trait QueriesRelationships
      */
     private function correlate(QueryBuilder $relationalQuery)
     {
+        if ($relationalQuery->getModel()->getRelateAs() === Model::RELATE_AS_PIVOT) {
+            throw new RuntimeException('Relation aggregates and whereHas are not supported for pivot belongsToMany relations.');
+        }
+
         $relationKey = $relationalQuery->getModel()->getActiveRelationKey();
 
         $relationalQuery->whereRaw(

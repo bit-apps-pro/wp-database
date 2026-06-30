@@ -133,3 +133,5 @@ require __DIR__ . '/Fixtures/AccessorModel.php';
 require __DIR__ . '/Fixtures/CreatingUser.php';
 require __DIR__ . '/Fixtures/ScopedSoftPost.php';
 require __DIR__ . '/Fixtures/TimestampedRow.php';
+require __DIR__ . '/Fixtures/Role.php';
+require __DIR__ . '/Fixtures/Member.php';

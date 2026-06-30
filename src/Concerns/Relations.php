@@ -9,6 +9,7 @@ namespace BitApps\WPDatabase\Concerns;
 use BitApps\WPDatabase\Model;
 use BitApps\WPDatabase\QueryBuilder;
 use Closure;
+use RuntimeException;
 
 if (!\defined('ABSPATH')) {
     exit;
@@ -81,13 +82,28 @@ trait Relations
         return $model->newQuery();
     }
 
-    public function belongsToMany($model, $foreignKey = null, $localKey = null)
-    {
-        $relationKeys = $this->getRelationKeys($foreignKey, $localKey);
-        $foreignKey   = $relationKeys[0];
-        $localKey     = $relationKeys[1];
+    public function belongsToMany(
+        $model,
+        $pivotTable = null,
+        $foreignPivotKey = null,
+        $relatedPivotKey = null,
+        $parentKey = null,
+        $relatedKey = null
+    ) {
+        if ($pivotTable === null) {
+            $relationKeys = $this->getRelationKeys($foreignPivotKey, $relatedPivotKey);
 
-        return $this->newBelongsToMany($model, $foreignKey, $localKey);
+            return $this->newBelongsToMany($model, $relationKeys[0], $relationKeys[1]);
+        }
+
+        return $this->newBelongsToManyPivot(
+            $model,
+            $pivotTable,
+            $foreignPivotKey,
+            $relatedPivotKey,
+            $parentKey,
+            $relatedKey
+        );
     }
 
     public function newBelongsToMany($model, $foreignKey = null, $localKey = null)
@@ -100,6 +116,46 @@ trait Relations
         ];
 
         return $model->newQuery();
+    }
+
+    public function newBelongsToManyPivot(
+        $model,
+        $pivotTable,
+        $foreignPivotKey = null,
+        $relatedPivotKey = null,
+        $parentKey = null,
+        $relatedKey = null
+    ) {
+        $related = new $model();
+
+        $foreignPivotKey = $foreignPivotKey ?: $this->getForeignKey();
+        $relatedPivotKey = $relatedPivotKey ?: $related->getForeignKey();
+        $parentKey       = $parentKey ?: $this->getPrimaryKey();
+        $relatedKey      = $relatedKey ?: $related->getPrimaryKey();
+
+        $related->setRelateAs(Model::RELATE_AS_PIVOT);
+        $related->_relationKeys[Model::RELATE_AS_PIVOT] = [
+            'pivotTable'      => $pivotTable,
+            'foreignPivotKey' => $foreignPivotKey,
+            'relatedPivotKey' => $relatedPivotKey,
+            'parentKey'       => $parentKey,
+            'relatedKey'      => $relatedKey,
+            'pivotColumns'    => [],
+        ];
+
+        return $related->newQuery();
+    }
+
+    public function addPivotColumns(array $columns)
+    {
+        if (!isset($this->_relationKeys[Model::RELATE_AS_PIVOT])) {
+            throw new RuntimeException('withPivot() is only valid on a pivot belongsToMany relation.');
+        }
+
+        $this->_relationKeys[Model::RELATE_AS_PIVOT]['pivotColumns'] = array_merge(
+            $this->_relationKeys[Model::RELATE_AS_PIVOT]['pivotColumns'],
+            $columns
+        );
     }
 
     /**
@@ -193,6 +249,12 @@ trait Relations
 
         if (\count($relations) > 0) {
             foreach ($relations as $relationName => $relationQuery) {
+                if ($relationQuery->getModel()->getRelateAs() === Model::RELATE_AS_PIVOT) {
+                    $this->retrievePivotRelateData($relationName, $relationQuery, $query);
+
+                    continue;
+                }
+
                 $parentQuery = clone $query;
                 $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
@@ -215,11 +277,73 @@ trait Relations
         }
     }
 
+    private function retrievePivotRelateData($relationName, QueryBuilder $relationQuery, QueryBuilder $query)
+    {
+        $bucketAlias = $this->applyPivotSelectAndJoin($relationQuery);
+
+        $pivot       = $relationQuery->getModel()->getActiveRelationKey();
+        $pivotRef    = $relationQuery->getModel()->getPrefix() . $pivot['pivotTable'];
+        $parentQuery = clone $query;
+
+        $relationQuery->whereRaw(
+            $pivotRef . '.' . $pivot['foreignPivotKey']
+                . ' IN ( SELECT * FROM ('
+                . $parentQuery->select($pivot['parentKey'])->prepare()
+                . ') AS subquery )'
+        );
+
+        $relatedModels = $relationQuery->get();
+
+        if ($relatedModels) {
+            foreach ($relatedModels as $relatedModel) {
+                $this->_relatedData[$relationName][$relatedModel->getAttribute($bucketAlias)][] = $relatedModel;
+            }
+        }
+    }
+
+    /**
+     * Selects related.* plus the aliased pivot link column, joins the pivot
+     * table on the related key, and appends any withPivot() columns. Returns the
+     * bucket alias used to group related rows by their parent link.
+     *
+     * @return string
+     */
+    private function applyPivotSelectAndJoin(QueryBuilder $relationQuery)
+    {
+        $model    = $relationQuery->getModel();
+        $pivot    = $model->getActiveRelationKey();
+        $pivotRef = $model->getPrefix() . $pivot['pivotTable'];
+        $alias    = Model::PIVOT_ATTRIBUTE_PREFIX . $pivot['foreignPivotKey'];
+
+        $relationQuery->select(['*']);
+        $relationQuery->join(
+            $pivot['pivotTable'],
+            $pivotRef . '.' . $pivot['relatedPivotKey'],
+            '=',
+            $relationQuery->getTable() . '.' . $pivot['relatedKey']
+        );
+        $relationQuery->selectRaw($pivotRef . '.' . $pivot['foreignPivotKey'] . ' as `' . $alias . '`');
+
+        foreach ($pivot['pivotColumns'] as $column) {
+            $relationQuery->selectRaw(
+                $pivotRef . '.' . $column . ' as `' . Model::PIVOT_ATTRIBUTE_PREFIX . $column . '`'
+            );
+        }
+
+        return $alias;
+    }
+
     private function setRelatedData(Model $model)
     {
         $relations = $this->getRelations();
         if (\count($relations) > 0) {
             foreach ($relations as $relationName => $relationQuery) {
+                if ($relationQuery->getModel()->getRelateAs() === Model::RELATE_AS_PIVOT) {
+                    $this->setPivotRelatedData($model, $relationName, $relationQuery->getModel());
+
+                    continue;
+                }
+
                 $relationKey = $relationQuery->getModel()->getActiveRelationKey();
 
                 $data = isset(
@@ -235,5 +359,17 @@ trait Relations
                 $model->setAttribute(\is_null($alias) ? $name : $alias, $data);
             }
         }
+    }
+
+    private function setPivotRelatedData(Model $model, $relationName, Model $relatedModel)
+    {
+        $pivot = $relatedModel->getActiveRelationKey();
+        $key   = $model->getAttribute($pivot['parentKey']);
+        $data  = isset($this->_relatedData[$relationName][$key])
+            ? $this->_relatedData[$relationName][$key]
+            : null;
+
+        [$name, $alias] = $this->prepareRelationName($relationName);
+        $model->setAttribute(\is_null($alias) ? $name : $alias, $data);
     }
 }

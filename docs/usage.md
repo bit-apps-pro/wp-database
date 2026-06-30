@@ -472,13 +472,82 @@ class Deal extends Model
 > model. There is no separate reverse-direction implementation; the direction is
 > determined entirely by the keys you provide and which model calls the method.
 
-Available: `hasOne()`, `hasMany()`, `belongsTo()`, `belongsToMany()` — each
-takes `($model, $foreignKey = null, $localKey = null)`.
+Available: `hasOne()`, `hasMany()`, `belongsTo()` — each takes
+`($model, $foreignKey = null, $localKey = null)`.
 
-> **`belongsToMany` is non-functional for pivot tables.** The method is
-> declared but contains no pivot-table join logic. Calling it will not produce a
-> many-to-many query through an intermediate table. See
-> [Limitations](#limitations--known-issues).
+### Many-to-many (`belongsToMany`)
+
+`belongsToMany` resolves a many-to-many relation through a pivot (junction)
+table. Signature:
+
+```php
+belongsToMany(
+    $model,
+    $pivotTable = null,      // unprefixed pivot/junction table name
+    $foreignPivotKey = null, // parent's key column ON the pivot table
+    $relatedPivotKey = null, // related's key column ON the pivot table
+    $parentKey = null,       // local key column on the parent table
+    $relatedKey = null       // key column on the related table
+)
+```
+
+When `$pivotTable` is `null` the method keeps its **legacy** behaviour (resolves
+exactly like `hasMany` — the related table must carry the parent FK). Pass the
+pivot table name (unprefixed; the package prefixes it like `join()` does) to get
+real pivot behaviour.
+
+Omitted keys derive from the package's own foreign-key convention
+(`{tableWithoutPrefix}_{primaryKey}`, e.g. `members_id` — note: plural, unlike
+Laravel's singular default):
+
+| Argument | Default | Member (`members`) ↔ Role (`roles`) |
+|---|---|---|
+| `$foreignPivotKey` | parent `getForeignKey()` | `members_id` |
+| `$relatedPivotKey` | related `getForeignKey()` | `roles_id` |
+| `$parentKey` | parent `getPrimaryKey()` | `id` |
+| `$relatedKey` | related `getPrimaryKey()` | `id` |
+
+```php
+class Member extends Model
+{
+    protected $table = 'members';
+
+    public function roles()
+    {
+        // pivot table role_user(member_id, role_id)
+        return $this->belongsToMany(Role::class, 'role_user', 'member_id', 'role_id');
+    }
+
+    // Carry extra pivot columns; they surface flat as `pivot_<col>` attributes
+    public function rolesWithAssignment()
+    {
+        return $this->belongsToMany(Role::class, 'role_user', 'member_id', 'role_id')
+            ->withPivot(['assigned_at']);
+    }
+}
+```
+
+The link column rides along on every related model as the reserved attribute
+`pivot_<foreignPivotKey>` (e.g. `pivot_member_id`), and each `withPivot()` column
+as `pivot_<column>` (e.g. `pivot_assigned_at`). These flat `pivot_*` attributes
+appear in `toArray()`.
+
+```php
+// Eager
+foreach (Member::with('roles')->get() as $member) {
+    foreach ($member->roles as $role) {
+        echo $role->pivot_member_id;          // the parent link
+    }
+}
+
+// Lazy
+$member = Member::query()->findOne(['id' => 1]);
+foreach ($member->roles as $role) { /* ... */ }
+```
+
+Read-only only: `attach`/`detach`/`sync` and `withCount`/`whereHas`/aggregates
+over a pivot relation are **not** supported (the latter throw). See
+[Limitations](#limitations--known-issues).
 
 ### Eager loading
 
@@ -663,10 +732,28 @@ method relocation.
 
 ## Limitations & known issues
 
-- **`belongsToMany` is declared but non-functional.** The method exists but
-  contains no pivot-table join logic. Calling it does not produce a
-  many-to-many query through an intermediate table. Workaround: model the pivot
-  as an explicit intermediate model with `hasMany` on each side.
+- **`belongsToMany` pivot relations are read-only and single-key.** Real
+  pivot-table many-to-many is supported for reads (eager `with()` + lazy
+  `$model->relation`), but with these gaps:
+  - No `withCount`/`whereHas`/aggregates on a pivot relation — they **throw**
+    `RuntimeException` (the pivot metadata has no single `foreignKey`/`localKey`).
+  - No `attach`/`detach`/`sync` (write side is out of scope).
+  - Single-column pivot/parent/related keys only — no composite keys.
+  - A non-empty model `$prefix` combined with a pivot table is unsupported (the
+    inherited `join()` prefixing quirk mis-prefixes the pivot table). The
+    default empty-`$prefix` case is correct.
+  - Duplicate pivot rows yield duplicate related models (no `DISTINCT`).
+  - Eager constraint closures may add `where`/`orderBy`/`limit` but **cannot**
+    narrow the selected columns — the pivot path always selects `related.*` so
+    the aliased pivot column can ride along.
+  - Pivot values surface as flat **reserved** `pivot_*` attributes (including the
+    link key `pivot_<foreignPivotKey>`) and appear in `toArray()`. A related
+    column literally named `pivot_*` would be overwritten. These attributes are
+    excluded from dirty-tracking on UPDATE, so re-saving a hydrated related model
+    is safe; a forced re-INSERT would attempt to write the non-existent columns.
+  - Null parent key: the eager path buckets a null parent key under null
+    (relation resolves to `null`); the lazy path renders `… IS NULL` and returns
+    pivot rows whose link column is NULL — a minor divergence.
 
 - **`belongsTo` and `hasOne` are the same alias; key naming is reversed from
   Laravel.** Both set the same `oneToOne` relation. The `$foreignKey` argument

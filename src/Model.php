@@ -73,6 +73,7 @@ use RuntimeException;
  * @method static Model|bool                    save()
  * @method static Model|bool                    upsert(array $values, ?array $update = null)
  * @method static QueryBuilder                  with(string|array $relation, ?Closure $callback = null)
+ * @method static QueryBuilder                  withPivot($columns)
  * @method static QueryBuilder                  withCount(string|array $relation)
  * @method static QueryBuilder                  withMin(string|array $relation)
  * @method static QueryBuilder                  withMax(string|array $relation)
@@ -95,6 +96,10 @@ use RuntimeException;
 abstract class Model implements ArrayAccess, JsonSerializable
 {
     use Relations, HasEvents;
+
+    public const RELATE_AS_PIVOT = 'belongsToManyPivot';
+
+    public const PIVOT_ATTRIBUTE_PREFIX = 'pivot_';
 
     public $timestamps = true;
 
@@ -588,7 +593,20 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     private function processRelatedAttribute(QueryBuilder $attribute)
     {
-        $relation    = $attribute->getModel()->getRelateAs();
+        $relation = $attribute->getModel()->getRelateAs();
+
+        if ($relation === self::RELATE_AS_PIVOT) {
+            $this->applyPivotSelectAndJoin($attribute);
+            $pivot    = $attribute->getModel()->getActiveRelationKey();
+            $pivotRef = $attribute->getModel()->getPrefix() . $pivot['pivotTable'];
+            $attribute->where(
+                $pivotRef . '.' . $pivot['foreignPivotKey'],
+                $this->getAttribute($pivot['parentKey'])
+            );
+
+            return $attribute->get();
+        }
+
         $relationKey = $attribute->getModel()->getRelationalKeys()[$relation];
         $attribute->where($relationKey['foreignKey'], $this->getAttribute($relationKey['localKey']));
         if ($relation == 'oneToOne') {
