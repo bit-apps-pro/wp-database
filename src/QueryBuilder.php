@@ -1505,7 +1505,7 @@ class QueryBuilder
                 return $allRows;
             }
 
-            return $ids;
+            return new Collection($ids);
         }
 
         return false;

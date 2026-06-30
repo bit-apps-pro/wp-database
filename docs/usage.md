@@ -142,7 +142,9 @@ $contact = Contact::insert([
     'email'      => 'ada@example.com',
 ]);
 
-// Bulk insert (array of rows) — returns a Collection of created models
+// Bulk insert (array of rows) — always returns a Collection.
+// Element type: Model on success (re-query hydrated); int (inserted ID) on
+// the rare fallback where the post-insert re-query yields no rows.
 $created = Contact::insert([
     ['first_name' => 'Ada',  'email' => 'ada@x.com'],
     ['first_name' => 'Grace','email' => 'grace@x.com'],
@@ -695,13 +697,6 @@ method relocation.
   `updated_at = VALUES(created_at)` instead of `VALUES(updated_at)`, so the
   timestamp may be wrong on update. Workaround: use separate `insert` + `update`
   calls where portability or correct timestamps are required.
-
-- **Bulk `insert()` may return a bare array, not a `Collection`.** When the
-  post-insert re-query that hydrates the inserted rows fails, the fallback path
-  returns a plain PHP array of IDs rather than a `Collection`. Code that calls
-  Collection methods on the return value of `insert()` will break in that case.
-  Workaround: check `is_array()` on the result or use `Collection::make()` to
-  wrap it defensively.
 
 - **Schema builder does not auto-apply the table prefix.** `Schema::$prefix`
   defaults to `null`, not `''`; table names are used as-is unless you call
