@@ -1316,6 +1316,10 @@ class QueryBuilder
                                 return 'NULL';
                             }
 
+                            if (\is_array($value) || \is_object($value)) {
+                                $value = wp_json_encode($value);
+                            }
+
                             $this->bindings[] = $value;
 
                             return $this->getValueType($value);
@@ -1567,6 +1571,10 @@ class QueryBuilder
                         function ($value) {
                             if (\is_null($value)) {
                                 return 'NULL';
+                            }
+
+                            if (\is_array($value) || \is_object($value)) {
+                                $value = wp_json_encode($value);
                             }
 
                             $this->bindings[] = $value;

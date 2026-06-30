@@ -50,4 +50,25 @@ final class BulkInsertReturnTest extends TestCase
 
         $this->assertInstanceOf(Collection::class, $result);
     }
+
+    /**
+     * Array/object values must be JSON-encoded in bulk insert, matching save()/
+     * update() — so callers don't have to wp_json_encode() them manually.
+     */
+    public function testBulkInsertEncodesArrayAndObjectValuesAsJson(): void
+    {
+        // rows_affected = 0 keeps the INSERT as last_query (no post-insert re-query).
+        $GLOBALS['wpdb']->rows_affected = 0;
+
+        User::query()->insert([
+            ['name' => 'a', 'meta' => ['x' => 1]],
+            ['name' => 'b', 'meta' => (object) ['y' => 2]],
+        ]);
+
+        $sql = $GLOBALS['wpdb']->last_query;
+
+        $this->assertStringContainsString('{"x":1}', $sql);
+        $this->assertStringContainsString('{"y":2}', $sql);
+        $this->assertStringNotContainsString('Array', $sql);
+    }
 }

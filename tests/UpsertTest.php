@@ -72,4 +72,17 @@ final class UpsertTest extends TestCase
         $this->assertStringContainsString('created_at = VALUES(created_at)', $sql);
         $this->assertStringNotContainsString('updated_at', $sql);
     }
+
+    /**
+     * Array/object values are JSON-encoded, matching bulk insert and save().
+     */
+    public function testUpsertEncodesArrayValuesAsJson(): void
+    {
+        User::query()->upsert(['email' => 'a@x.com', 'meta' => ['x' => 1]]);
+
+        $sql = $GLOBALS['wpdb']->last_query;
+
+        $this->assertStringContainsString('{"x":1}', $sql);
+        $this->assertStringNotContainsString('Array', $sql);
+    }
 }
