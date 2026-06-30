@@ -24,6 +24,18 @@ final class QueryFeaturesTest extends TestCase
         $GLOBALS['wpdb'] = new FakeWpdb();
     }
 
+    // --- Select --------------------------------------------------------------
+
+    public function testSelectColumnAliasQualifiesColumnNotWholeExpression(): void
+    {
+        $sql = (new User())->select(['id', 'name AS n'])->toSql();
+
+        // the column is qualified/back-ticked, the alias kept separate
+        $this->assertStringContainsString('`name` AS `n`', $sql);
+        // the whole "name AS n" must NOT be treated as one column name
+        $this->assertStringNotContainsString('`name AS n`', $sql);
+    }
+
     // --- Joins ---------------------------------------------------------------
 
     public function testInnerJoinCompilesWithOnClause(): void

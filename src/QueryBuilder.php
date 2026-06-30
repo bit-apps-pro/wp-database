@@ -361,6 +361,10 @@ class QueryBuilder
 
     public function prepareColumnName(string $column)
     {
+        if (preg_match('/^(.+?)\s+as\s+(.+)$/i', $column, $matches)) {
+            return $this->prepareColumnName(trim($matches[1])) . ' AS `' . trim($matches[2], " `") . '`';
+        }
+
         if (strpos($column, '.') !== false) {
             return $column;
         }

@@ -198,13 +198,15 @@ inspect the SQL without executing.
 ```php
 Contact::select('id', 'email')->get();
 Contact::select(['id', 'email'])->get();
+Contact::select(['id', 'title AS t'])->get();       // column alias — qualifies `title`, keeps AS `t`
 Contact::addSelect('phone')->get();                 // add to existing select
 Contact::selectRaw('COUNT(*) as total')->get();     // raw expression (NOT select())
 Contact::selectRaw('SUM(amount) as amt', [])->get();
 ```
 
-> Pass raw SQL expressions to `selectRaw()`, not `select()` — `select()`
-> back-tick-quotes its arguments as column identifiers.
+> `select()` handles plain columns and `column AS alias`, back-tick-quoting them
+> as identifiers. Pass raw SQL expressions or function calls (`COUNT(*)`, …) to
+> `selectRaw()` instead.
 
 ### Where
 

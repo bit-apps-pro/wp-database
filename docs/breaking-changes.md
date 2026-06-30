@@ -128,13 +128,17 @@ which wraps the name as `` `table`.`column` `` unless it already contains a `.`.
 ->select('COUNT(*) as total')   // emitted: `COUNT(*) as total`  ❌ invalid SQL
 ```
 
-**Why it breaks:** any raw SQL expression, function call, or alias passed to
-`select()` is now quoted as a single identifier.
+**Why it breaks:** a raw SQL expression or function call passed to `select()` is
+quoted as a single identifier.
 
-**Migration:** use `selectRaw()` for expressions; plain columns need no change:
+A plain `column AS alias` **is** handled — `prepareColumnName()` qualifies the
+column and keeps the alias separate, so `->select(['id', 'title AS t'])` emits
+`` `table`.`id`, `table`.`title` AS `t` ``. Only expressions/function calls
+(`COUNT(*)`, `SUM(amount) AS amt`, …) still need `selectRaw()`:
 
 ```php
-->selectRaw('COUNT(*) as total')
+->select(['title AS t'])              // ✅ simple column alias
+->selectRaw('COUNT(*) as total')      // expressions / functions
 ->selectRaw('SUM(amount) as amt', $bindings)
 ```
 
