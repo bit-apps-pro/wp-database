@@ -46,6 +46,14 @@ class Schema
         return $this->build($blueprint);
     }
 
+    public static function withWpPrefix()
+    {
+        $schema         = new self();
+        $schema->prefix = Connection::getPrefix();
+
+        return $schema;
+    }
+
     public function createBlueprint($schema, $method, ?Closure $callback = null)
     {
         return new Blueprint(

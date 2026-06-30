@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
  *
  * These tests operate on the literal table name — no prefix is applied because
  * Connection::setPluginPrefix is intentionally not called here.
- *
  */
 final class SchemaTest extends TestCase
 {
@@ -117,5 +116,41 @@ final class SchemaTest extends TestCase
         $sql = $GLOBALS['wpdb']->last_query;
 
         $this->assertStringContainsString('DROP PRIMARY KEY', $sql);
+    }
+
+    // --- B1: prefix behaviour ---
+
+    public function testBareDefaultNeverPrefixedWithWp(): void
+    {
+        Schema::create('orders', function ($table) {
+            $table->id();
+        });
+
+        $sql = $GLOBALS['wpdb']->last_query;
+
+        $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS orders', $sql);
+        $this->assertStringNotContainsString('wp_orders', $sql);
+    }
+
+    public function testWithWpPrefixPrependsWpPrefix(): void
+    {
+        Schema::withWpPrefix()->create('orders', function ($table) {
+            $table->id();
+        });
+
+        $sql = $GLOBALS['wpdb']->last_query;
+
+        $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS wp_orders', $sql);
+    }
+
+    public function testWithPrefixRegressionCustomPrefix(): void
+    {
+        Schema::withPrefix('custom_')->create('orders', function ($table) {
+            $table->id();
+        });
+
+        $sql = $GLOBALS['wpdb']->last_query;
+
+        $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS custom_orders', $sql);
     }
 }

@@ -611,8 +611,9 @@ Placeholders use `$wpdb` conventions (`%d`, `%s`, `%f`) with the bindings array.
 ## Schema builder
 
 Use `Schema` (a facade over `Blueprint`) to create, alter and drop tables. By
-default the table name is used as-is — call `Schema::withPrefix($prefix)` to
-apply a prefix.
+design the table name is used as-is — call `Schema::withPrefix($prefix)` to
+apply a literal prefix, or `Schema::withWpPrefix()` to use the same prefix
+`Model`s use (`Connection::getPrefix()`).
 
 ```php
 use BitApps\WPDatabase\Schema;
@@ -684,7 +685,11 @@ method relocation.
   timestamp may be wrong on update. Workaround: use separate `insert` + `update`
   calls where portability or correct timestamps are required.
 
-- **Schema builder does not auto-apply the table prefix.** `Schema::$prefix`
-  defaults to `null`, not `''`; table names are used as-is unless you call
-  `Schema::withPrefix()` explicitly. See [Schema builder reference](schema.md).
+- **Schema builder uses the literal table name by design.** `Schema::create()` passes
+  the name through as-is — no WordPress prefix is added automatically, so existing
+  tables are never relocated. Use `Schema::withPrefix('your_prefix_')` for a literal
+  prefix, or `Schema::withWpPrefix()` to match the prefix `Model`s use
+  (`Connection::getPrefix()`). The `$prefix` property intentionally defaults to `null`
+  (not `''`) to preserve bare-table behaviour for plugins that rely on it.
+  See [Schema builder reference](schema.md).
 

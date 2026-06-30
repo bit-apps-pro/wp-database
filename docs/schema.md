@@ -304,11 +304,19 @@ on `(new Schema())->create(...)` — both are equivalent thanks to `__callStatic
 | `Schema::drop($table)` | `DROP TABLE IF EXISTS`. |
 | `Schema::rename($table, $newName)` | `ALTER TABLE … RENAME TO`. Both names are used as-is unless `Schema::withPrefix()` is used (no prefix by default). |
 | `Schema::withPrefix($prefix)` | Sets the prefix applied for this call (there is no prefix by default). Returns a `Schema` instance; chain `.create()`, `.edit()`, etc. |
+| `Schema::withWpPrefix()` | Sets the prefix to `Connection::getPrefix()` (WordPress prefix + plugin prefix), so the table matches what `Model`s use. Returns a `Schema` instance; chain `.create()`, `.edit()`, etc. |
 
 ```php
-// Override prefix — table resolves as "custom_orders"
-// (without withPrefix, the bare name "orders" is used — no prefix is applied automatically)
+// Literal prefix — table resolves as "custom_orders"
+// (without withPrefix/withWpPrefix, the bare name "orders" is used — no prefix is applied)
 Schema::withPrefix('custom_')->create('orders', function ($table) {
+    $table->id();
+    $table->string('reference');
+    $table->timestamps();
+});
+
+// Match the Model prefix (e.g. wp_ or wp_myplugin_) — table resolves as "wp_orders"
+Schema::withWpPrefix()->create('orders', function ($table) {
     $table->id();
     $table->string('reference');
     $table->timestamps();
@@ -319,7 +327,9 @@ Schema::withPrefix('custom_')->create('orders', function ($table) {
 
 ## Limitations & known issues
 
-- **Schema builder does not auto-apply the table prefix.** `Schema::$prefix` defaults to
-  `null`, not `''`; no prefix is prepended unless you call `Schema::withPrefix()` first.
-  To use the WordPress prefix, pass it explicitly:
-  `Schema::withPrefix($wpdb->prefix)->create(...)`.
+- **Schema builder uses the literal table name by design.** `Schema::create()` passes the
+  name through as-is — no WordPress prefix is added automatically, so existing tables are
+  never relocated. Use `Schema::withPrefix('your_prefix_')` for a literal prefix, or
+  `Schema::withWpPrefix()` to match the prefix `Model`s use (`Connection::getPrefix()`).
+  The `$prefix` property intentionally defaults to `null` (not `''`) to preserve
+  bare-table behaviour for plugins that rely on it.
