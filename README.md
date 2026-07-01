@@ -43,5 +43,7 @@ $active = Contact::where('is_active', 1)
 
 - **[Usage guide](docs/usage.md)** — models, query builder, relationships,
   casts, events, transactions, and more.
+- **[Relationships](docs/relations.md)** — `hasOne`/`belongsTo`/`hasMany`/`belongsToMany`,
+  eager & lazy loading, relation aggregates, and limitations.
 - **[Schema builder](docs/schema.md)** — table creation, columns, indexes, and migrations.
 - **[Breaking changes](docs/breaking-changes.md)** — upgrade notes.

@@ -29,6 +29,7 @@ API and runtime behavior change, it is a **major** version bump.
 | 10 | Relations | `addRelation()` signature `string` → `array`, void | Medium |
 | 11 | Blueprint | `binary()` removed | Low |
 | 12 | QueryBuilder | exception type/message changed in `exec()` | Low |
+| 13 | Model | soft-delete reads exclude trashed by default (opt out with `$soft_delete_scope = false`) | Medium |
 
 ---
 
@@ -282,6 +283,35 @@ instead of `Exception('SQL query is null')`.
 `RuntimeException` extends `Exception`, so `catch (\Exception $e)` still works.
 Code matching on the **message** string, or catching the base `Exception` type
 specifically for this case, should be reviewed.
+
+---
+
+### 2.13 Soft-delete reads now exclude trashed rows by default
+
+A model with `public $soft_deletes = true;` previously returned **all** rows —
+trashed and non-trashed alike — unless it also opted in with
+`$soft_delete_scope = true`. Reads now inject `deleted_at IS NULL` **by default**,
+so trashed rows no longer appear.
+
+```php
+class Post extends Model
+{
+    public $soft_deletes = true;   // reads now hide trashed rows automatically
+}
+
+Post::all();                        // excludes trashed rows
+Post::withTrashed()->get();         // include trashed
+Post::onlyTrashed()->get();         // only trashed
+```
+
+**Migration:** to keep the old unfiltered behavior, declare the opt-out flag:
+
+```php
+public $soft_delete_scope = false;  // reads return every row, including trashed
+```
+
+`refresh()` reloads a row by its own primary key with `withTrashed()`, so
+re-hydrating a trashed model still reports `exists() === true`.
 
 ---
 

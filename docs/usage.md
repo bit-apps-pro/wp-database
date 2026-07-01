@@ -110,7 +110,7 @@ class Contact extends Model
     ];
 
     // Soft deletes: delete() sets deleted_at instead of removing the row.
-    // NOTE: reads are NOT filtered — soft-deleted rows appear in all() and every query.
+    // Reads exclude trashed rows by default; opt out with $soft_delete_scope = false.
     public $soft_deletes = true;
 }
 ```
@@ -123,7 +123,7 @@ class Contact extends Model
 | `$fillable` | Mass-assignment allow-list. Unset = allow all non-timestamp, non-PK attributes. |
 | `$casts` | Map of column → cast type. See [Attribute casting](#attribute-casting). |
 | `$timestamps` | Auto-set `created_at`/`updated_at` on insert/update (declared `true` in the base `Model`; set to `false` to disable). Requires the columns to exist — see [`timestamps()` in `docs/schema.md`](schema.md#timestamps). |
-| `$soft_deletes` | Must be declared `true` on the model. `delete()` then sets `deleted_at` instead of removing the row. Reads return **all rows by default** — including trashed ones. To enable automatic filtering, also declare `public $soft_delete_scope = true;`; reads will then exclude trashed rows automatically. Use `->withTrashed()` to include them, or `->onlyTrashed()` to return only trashed rows. See [Limitations](#limitations--known-issues) and [`softDeletes()` in `docs/schema.md`](schema.md#softdeletes). |
+| `$soft_deletes` | Must be declared `true` on the model. `delete()` then sets `deleted_at` instead of removing the row. Reads **exclude trashed rows by default**. Use `->withTrashed()` to include them, or `->onlyTrashed()` to return only trashed rows. Declare `public $soft_delete_scope = false;` to opt out of the filter (reads return every row, including trashed). See [Limitations](#limitations--known-issues) and [`softDeletes()` in `docs/schema.md`](schema.md#softdeletes). |
 
 ---
 
@@ -371,10 +371,11 @@ Contact::destroy([1, 2, 3]);               // delete by primary keys
   `RuntimeException('SQL query is empty')` — a guard against wiping the table.
   Use a raw `TRUNCATE` if you really mean to empty it.
 - With `$soft_deletes = true`, `delete()` sets `deleted_at` instead of removing
-  the row. Reads return **all rows by default** — including trashed ones. Add
-  `public $soft_delete_scope = true;` to enable automatic filtering: reads exclude
-  trashed rows, `->withTrashed()` includes them, `->onlyTrashed()` returns only
-  trashed rows. See [Limitations](#limitations--known-issues).
+  the row, and reads **exclude trashed rows by default**. Use `->withTrashed()`
+  to include them, or `->onlyTrashed()` to return only trashed rows. To opt out
+  of the automatic filter (reads return every row, including trashed), declare
+  `public $soft_delete_scope = false;`. See
+  [Limitations](#limitations--known-issues).
 - On a soft-delete model, `forceDelete()` emits a real `DELETE` (bypassing the
   soft rewrite) and `restore()` clears `deleted_at`. Both throw on a model
   without `$soft_deletes`.
@@ -445,6 +446,10 @@ Contact::query()->withCast(['is_active' => 'bool'])->get();
 
 ## Relationships
 
+> **Full reference:** [docs/relations.md](relations.md) — every relation type,
+> eager/lazy loading, aggregates, and relation-specific limitations in one place.
+> This section is a quick overview.
+
 Define relationships as methods on the model. The relation method returns a
 query for the related model.
 
@@ -495,35 +500,8 @@ Available: `hasOne()`, `hasMany()`, `belongsTo()` — each takes
 
 ### Many-to-many (`belongsToMany`)
 
-`belongsToMany` resolves a many-to-many relation through a pivot (junction)
-table. Signature:
-
-```php
-belongsToMany(
-    $model,
-    $pivotTable = null,      // unprefixed pivot/junction table name
-    $foreignPivotKey = null, // parent's key column ON the pivot table
-    $relatedPivotKey = null, // related's key column ON the pivot table
-    $parentKey = null,       // local key column on the parent table
-    $relatedKey = null       // key column on the related table
-)
-```
-
-When `$pivotTable` is `null` the method keeps its **legacy** behaviour (resolves
-exactly like `hasMany` — the related table must carry the parent FK). Pass the
-pivot table name (unprefixed; the package prefixes it like `join()` does) to get
-real pivot behaviour.
-
-Omitted keys derive from the package's own foreign-key convention
-(`{tableWithoutPrefix}_{primaryKey}`, e.g. `members_id` — note: plural, unlike
-Laravel's singular default):
-
-| Argument | Default | Member (`members`) ↔ Role (`roles`) |
-|---|---|---|
-| `$foreignPivotKey` | parent `getForeignKey()` | `members_id` |
-| `$relatedPivotKey` | related `getForeignKey()` | `roles_id` |
-| `$parentKey` | parent `getPrimaryKey()` | `id` |
-| `$relatedKey` | related `getPrimaryKey()` | `id` |
+Resolves a many-to-many relation through a pivot (junction) table. Pass the
+unprefixed pivot table name plus the parent/related key columns on it:
 
 ```php
 class Member extends Model
@@ -535,37 +513,16 @@ class Member extends Model
         // pivot table role_user(member_id, role_id)
         return $this->belongsToMany(Role::class, 'role_user', 'member_id', 'role_id');
     }
-
-    // Carry extra pivot columns; they surface flat as `pivot_<col>` attributes
-    public function rolesWithAssignment()
-    {
-        return $this->belongsToMany(Role::class, 'role_user', 'member_id', 'role_id')
-            ->withPivot(['assigned_at']);
-    }
 }
 ```
 
-The link column rides along on every related model as the reserved attribute
-`pivot_<foreignPivotKey>` (e.g. `pivot_member_id`), and each `withPivot()` column
-as `pivot_<column>` (e.g. `pivot_assigned_at`). These flat `pivot_*` attributes
-appear in `toArray()`.
+With no `$pivotTable` the call keeps its **legacy** `hasMany`-style behaviour.
+Pivot values surface as flat reserved `pivot_*` attributes; add extra ones with
+`->withPivot([...])`. Pivot relations are **read-only** — `attach`/`detach`/`sync`
+and aggregates over a pivot relation are not supported (the latter throw).
 
-```php
-// Eager
-foreach (Member::with('roles')->get() as $member) {
-    foreach ($member->roles as $role) {
-        echo $role->pivot_member_id;          // the parent link
-    }
-}
-
-// Lazy
-$member = Member::query()->findOne(['id' => 1]);
-foreach ($member->roles as $role) { /* ... */ }
-```
-
-Read-only only: `attach`/`detach`/`sync` and `withCount`/`whereHas`/aggregates
-over a pivot relation are **not** supported (the latter throw). See
-[Limitations](#limitations--known-issues).
+See [docs/relations.md](relations.md#belongstomany-many-to-many) for the full
+signature, key-defaults table, `withPivot`, eager/lazy access, and limitations.
 
 ### Eager loading
 
@@ -750,41 +707,20 @@ method relocation.
 
 ## Limitations & known issues
 
-- **`belongsToMany` pivot relations are read-only and single-key.** Real
-  pivot-table many-to-many is supported for reads (eager `with()` + lazy
-  `$model->relation`), but with these gaps:
-  - No `withCount`/`whereHas`/aggregates on a pivot relation — they **throw**
-    `RuntimeException` (the pivot metadata has no single `foreignKey`/`localKey`).
-  - No `attach`/`detach`/`sync` (write side is out of scope).
-  - Single-column pivot/parent/related keys only — no composite keys.
-  - Duplicate pivot rows yield duplicate related models (no `DISTINCT`).
-  - Eager constraint closures may add `where`/`orderBy`/`limit` but **cannot**
-    narrow the selected columns — the pivot path always selects `related.*` so
-    the aliased pivot column can ride along.
-  - Pivot values surface as flat **reserved** `pivot_*` attributes (including the
-    link key `pivot_<foreignPivotKey>`) and appear in `toArray()`. A related
-    column literally named `pivot_*` would be overwritten. These attributes are
-    excluded from dirty-tracking on UPDATE, so re-saving a hydrated related model
-    is safe; a forced re-INSERT would attempt to write the non-existent columns.
-  - Null parent key: the eager path buckets a null parent key under null
-    (relation resolves to `null`); the lazy path renders `… IS NULL` and returns
-    pivot rows whose link column is NULL — a minor divergence.
+- **Relation limitations** — `belongsToMany` pivot relations are read-only and
+  single-key (no `attach`/`detach`/`sync`, no aggregates over a pivot relation),
+  and `belongsTo`/`hasOne` share one `oneToOne` alias whose key naming is
+  **reversed from Laravel**. Full detail:
+  [docs/relations.md](relations.md#limitations).
 
-- **`belongsTo` and `hasOne` are the same alias; key naming is reversed from
-  Laravel.** Both set the same `oneToOne` relation. The `$foreignKey` argument
-  is the column on the **related** table and `$localKey` is the column on the
-  **calling** model's table — the opposite of Laravel's convention. Ensure you
-  supply both arguments explicitly to avoid confusion.
-
-- **Soft delete reads are unfiltered by default.** `softDeletes()` adds a
-  `deleted_at` column and `delete()` sets it. Reads return all rows — including
-  trashed ones — unless you also declare `public $soft_delete_scope = true;` on
-  the model. With the flag set, reads automatically exclude trashed rows;
-  `->withTrashed()` includes them and `->onlyTrashed()` returns only trashed rows.
-  **Edge case:** `refresh()` / `exists()` use a default (now scoped) read, so a
-  trashed opt-in model reloaded without `->withTrashed()` reports `exists() === false`
-  and a subsequent `save()` will INSERT rather than UPDATE. Follow-up planned to
-  thread soft-delete awareness into `refresh()`.
+- **Soft delete reads exclude trashed rows by default.** `softDeletes()` adds a
+  `deleted_at` column and `delete()` sets it. Reads automatically filter out
+  trashed rows (`deleted_at IS NULL`); `->withTrashed()` includes them and
+  `->onlyTrashed()` returns only trashed rows. Declare
+  `public $soft_delete_scope = false;` on the model to opt out of the filter and
+  read every row, including trashed ones. `refresh()` reloads a row by its own
+  primary key with `withTrashed()`, so re-hydrating a trashed model still reports
+  `exists() === true` and a following `save()` correctly UPDATEs.
 
 - **`upsert` is MySQL-only.** It generates `INSERT … ON DUPLICATE KEY UPDATE`,
   which is not portable to other databases. Workaround: use separate `insert` +
