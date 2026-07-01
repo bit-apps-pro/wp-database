@@ -138,3 +138,4 @@ require __DIR__ . '/Fixtures/TimestampedRow.php';
 require __DIR__ . '/Fixtures/Role.php';
 require __DIR__ . '/Fixtures/Member.php';
 require __DIR__ . '/Fixtures/PrefixedModel.php';
+require __DIR__ . '/Fixtures/RelationSentinel.php';
