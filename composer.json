@@ -29,7 +29,7 @@
     ]
   },
   "require": {
-    "php": "^7.4 || ^8.0"
+    "php": ">=8.2"
   },
   "autoload": {
     "psr-4": {
@@ -37,14 +37,16 @@
     }
   },
   "scripts": {
+    "test": "phpunit",
     "lint": "./vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.php",
-    "compat": "./vendor/bin/phpcs -p ./src --standard=PHPCompatibilityWP --runtime-set testVersion 7.4-"
+    "compat": "./vendor/bin/phpcs -p ./src --standard=PHPCompatibilityWP --runtime-set testVersion 8.2-"
   },
   "require-dev": {
     "friendsofphp/php-cs-fixer": "^3.10",
     "sirbrillig/phpcs-variable-analysis": "*",
     "dealerdirect/phpcodesniffer-composer-installer": "^0.7",
-    "phpcompatibility/phpcompatibility-wp": "*"
+    "phpcompatibility/phpcompatibility-wp": "*",
+    "phpunit/phpunit": "^11.5"
   },
   "extra": {
     "branch-alias": {
@@ -52,6 +54,9 @@
     }
   },
   "config": {
+    "platform": {
+      "php": "8.2.0"
+    },
     "allow-plugins": {
       "dealerdirect/phpcodesniffer-composer-installer": true
     }
