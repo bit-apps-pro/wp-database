@@ -72,6 +72,12 @@ $users->all();        // underlying plain array
 $users->toArray();    // array of model arrays
 ```
 
+> **Silent-data-loss trap:** an `if (is_array($result)) { … }` "got rows?" guard
+> now **inverts** — a non-empty read is a `Collection` (`is_array` → false) while
+> a zero-row read is a real `[]` (`is_array` → true) — so the branch runs only
+> when there is *nothing* to process, silently dropping data whenever rows exist.
+> Replace such guards with `empty($result)` / `!empty($result)`.
+
 ---
 
 ### 2.2 `QueryBuilder::update()` is no longer chainable and executes immediately
@@ -93,6 +99,13 @@ attributes and executes.
 
 **Migration:** set conditions **before** `update()`; drop trailing
 `->save()`/`->exec()`.
+
+> **Runtime fatal on a chained `->save()`:** `update()` returns the *result*
+> (`Model|false` for an existing model, `int|false` for a fresh one), never the
+> builder — so `$model->update([...])->save()` fatals (`Call to a member function
+> save() on false`) whenever the UPDATE changes **0 rows** (e.g. an idempotent
+> re-save where no value actually differs, which MySQL reports as 0 affected
+> rows). Drop the trailing `->save()` — `update()` already persisted.
 
 ---
 
@@ -142,6 +155,13 @@ column and keeps the alias separate, so `->select(['id', 'title AS t'])` emits
 ->selectRaw('COUNT(*) as total')      // expressions / functions
 ->selectRaw('SUM(amount) as amt', $bindings)
 ```
+
+> **Gotcha — an expression may "accidentally" survive:** `prepareColumnName()`
+> passes a column through untouched only when it already contains a `.`. So
+> `select(['CONCAT("https://example.com/…", col) as x'])` emits valid SQL *merely*
+> because the URL contains a dot — the identical code breaks on a dotless host
+> (`http://localhost/…`). Never rely on this; route any function/expression
+> through `selectRaw()`.
 
 ---
 
@@ -242,6 +262,11 @@ User::withCount('posts')->get();   // adds posts_count sub-select
 
 **Migration:** for a plain row count use `->count()`; for relation counts use
 `withCount($relation)`. See §4.2 for the full aggregate family.
+
+> **Runtime fatal:** a leftover no-arg `->withCount()` — including one buried in
+> a relation method that is later eager-loaded via `with('rel')` (the relation
+> resolver invokes the method to validate it) — now throws `ArgumentCountError`;
+> the relation-name parameter is required.
 
 ---
 
