@@ -4,6 +4,7 @@ namespace BitApps\WPDatabase\Tests;
 
 use BitApps\WPDatabase\Tests\Fixtures\ScopedSoftPost;
 use BitApps\WPDatabase\Tests\Fixtures\SoftPost;
+use BitApps\WPDatabase\Tests\Fixtures\UnscopedSoftPost;
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use FakeWpdb;
 use PHPUnit\Framework\TestCase;
@@ -20,10 +21,18 @@ final class SoftDeleteScopeTest extends TestCase
         $GLOBALS['wpdb'] = new FakeWpdb();
     }
 
-    // BC GUARD: existing $soft_deletes model must NOT be auto-filtered
-    public function testSoftDeletesOnlyModelIsNotFiltered(): void
+    // Default: a $soft_deletes model hides trashed rows without any opt-in flag
+    public function testSoftDeletesModelFiltersByDefault(): void
     {
         $sql = SoftPost::query()->toSql();
+        $this->assertStringContainsString('deleted_at', $sql);
+        $this->assertStringContainsString('IS NULL', $sql);
+    }
+
+    // Opt-out: $soft_delete_scope = false restores the unfiltered read
+    public function testSoftDeleteScopeFalseOptsOutOfFilter(): void
+    {
+        $sql = UnscopedSoftPost::query()->toSql();
         $this->assertStringNotContainsString('deleted_at', $sql);
     }
 

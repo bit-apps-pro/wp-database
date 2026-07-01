@@ -1740,13 +1740,20 @@ class QueryBuilder
     }
 
     /**
-     * Returns true when the model opts into automatic soft-delete read scope.
+     * Returns true when soft-delete read scope is active for the model.
+     *
+     * Soft-delete models exclude trashed rows by default; a model opts out by
+     * declaring public $soft_delete_scope = false.
      *
      * @return bool
      */
     private function autoScopeEnabled()
     {
-        return property_exists($this->_model, 'soft_delete_scope') && $this->_model->soft_delete_scope;
+        if (property_exists($this->_model, 'soft_delete_scope')) {
+            return (bool) $this->_model->soft_delete_scope;
+        }
+
+        return true;
     }
 
     /**

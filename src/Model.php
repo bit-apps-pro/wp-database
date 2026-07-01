@@ -238,7 +238,10 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return false;
         }
 
-        $result = $this->newQuery()->findOne([$this->primaryKey => $this->attributes[$this->primaryKey]]);
+        // withTrashed(): refresh reloads this row by its own PK, so it must find
+        // the row even when trashed — otherwise a hydrated soft-deleted model
+        // reports exists() === false and the next save() re-INSERTs a duplicate.
+        $result = $this->newQuery()->withTrashed()->findOne([$this->primaryKey => $this->attributes[$this->primaryKey]]);
 
         if (!$result) {
             $this->_isExists = false;
