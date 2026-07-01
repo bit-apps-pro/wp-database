@@ -356,11 +356,12 @@ Not signature breaks, but observable runtime differences.
   Bulk inserts now return all created models.
 - **NULL columns persist as SQL `NULL`** in insert/update/upsert, instead of
   being coerced to an empty string `''`.
-- **`save()` treats a 0-row UPDATE as success.** A successful UPDATE that changes
-  no rows (an idempotent re-save where no value differs) now returns the Model
-  instead of `false` — `exec()` returns `false` only on a real DB error/cancel,
-  so `save()` no longer misreports a no-op update as a failure. The insert path
-  and the genuine-error path (returns `false`) are unchanged.
+- **`save()` decides success from the query result, not the affected/returned id.**
+  A successful UPDATE that changes no rows (an idempotent re-save where no value
+  differs) and a successful INSERT into a table with a manual/composite key (no
+  auto-increment id) both now return the Model instead of `false` — `exec()`
+  returns `false` only on a real DB error/cancel. The auto-increment id is still
+  assigned to the primary key when present. Genuine errors still return `false`.
 - **`paginate()`** defaults `select` to `*` when empty and computes the count
   before applying limit/offset; pagination with explicit `select` columns and
   count no longer conflict.

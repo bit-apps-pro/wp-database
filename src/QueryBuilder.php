@@ -1165,15 +1165,19 @@ class QueryBuilder
         }
 
         $this->insert = $columns;
-        $this->exec();
-        if ($insertId = $this->lastInsertId()) {
-            $this->_model->setAttribute($pk, $insertId);
-            $this->_model->fireEvent('saved');
-
-            return $this->_model;
+        if ($this->exec() === false) {
+            return false;
         }
 
-        return false;
+        // Set the PK from the auto-increment id when there is one; a table with a
+        // manual/composite key returns insert_id 0 yet the insert still succeeded.
+        if ($insertId = $this->lastInsertId()) {
+            $this->_model->setAttribute($pk, $insertId);
+        }
+
+        $this->_model->fireEvent('saved');
+
+        return $this->_model;
     }
 
     /**
