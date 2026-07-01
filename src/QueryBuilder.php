@@ -1154,7 +1154,8 @@ class QueryBuilder
 
             $this->update = $columns;
 
-            if ($this->exec()) {
+            // 0-row (no-op) UPDATE is success; exec() is false only on error/cancel.
+            if ($this->exec() !== false) {
                 $this->_model->fireEvent('saved');
 
                 return $this->_model;

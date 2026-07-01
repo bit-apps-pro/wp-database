@@ -100,12 +100,14 @@ attributes and executes.
 **Migration:** set conditions **before** `update()`; drop trailing
 `->save()`/`->exec()`.
 
-> **Runtime fatal on a chained `->save()`:** `update()` returns the *result*
+> **Don't chain after `update()`:** `update()` returns the *result*
 > (`Model|false` for an existing model, `int|false` for a fresh one), never the
-> builder — so `$model->update([...])->save()` fatals (`Call to a member function
-> save() on false`) whenever the UPDATE changes **0 rows** (e.g. an idempotent
-> re-save where no value actually differs, which MySQL reports as 0 affected
-> rows). Drop the trailing `->save()` — `update()` already persisted.
+> builder, so a trailing builder call breaks. On an **existing** model
+> `$model->update([...])->save()` now works — the `->save()` lands on the returned
+> Model and no-ops (redundant) — but on a **fresh** model the `int` return still
+> fatals (`save()` on int). Drop the trailing `->save()`; `update()` already
+> persisted. (Before the `save()` 0-row fix in §3, the existing-model chain also
+> fataled on any no-op update.)
 
 ---
 
@@ -354,6 +356,11 @@ Not signature breaks, but observable runtime differences.
   Bulk inserts now return all created models.
 - **NULL columns persist as SQL `NULL`** in insert/update/upsert, instead of
   being coerced to an empty string `''`.
+- **`save()` treats a 0-row UPDATE as success.** A successful UPDATE that changes
+  no rows (an idempotent re-save where no value differs) now returns the Model
+  instead of `false` — `exec()` returns `false` only on a real DB error/cancel,
+  so `save()` no longer misreports a no-op update as a failure. The insert path
+  and the genuine-error path (returns `false`) are unchanged.
 - **`paginate()`** defaults `select` to `*` when empty and computes the count
   before applying limit/offset; pagination with explicit `select` columns and
   count no longer conflict.
