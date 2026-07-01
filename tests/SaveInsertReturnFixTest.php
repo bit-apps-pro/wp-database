@@ -61,4 +61,17 @@ final class SaveInsertReturnFixTest extends TestCase
 
         $this->assertFalse($user->save(), 'a failed insert must return false');
     }
+
+    public function testFailedInsertWithStaleInsertIdReturnsFalseAndDoesNotSetPk(): void
+    {
+        $GLOBALS['wpdb']->insert_id  = 99;             // stale id from an earlier insert
+        $GLOBALS['wpdb']->last_error = 'ER_DUP_ENTRY'; // this insert failed -> exec() false
+
+        $user       = new User();
+        $user->name = 'Ada';
+        $result     = $user->save();
+
+        $this->assertFalse($result, 'a failed insert must return false even with a stale insert_id');
+        $this->assertNotEquals(99, $user->getAttribute('id'), 'a failed insert must not set the PK from a stale insert_id');
+    }
 }

@@ -98,4 +98,30 @@ final class RelationResolutionSafetyTest extends TestCase
             'getActiveRelationKey() must fail loudly on an unknown relation tag, not return a silent null'
         );
     }
+
+    // A method that DOES return a QueryBuilder, but one whose model has no active
+    // relation key, must still be rejected (the second isRelationQuery() branch).
+    public function testWithRejectsMethodReturningNonRelationQueryBuilder(): void
+    {
+        $this->assertRejectedAsRelation(static function () {
+            RelationSentinel::with('plainQuery');
+        });
+    }
+
+    // A framework Model method (refresh() runs a SELECT) must be rejected — and,
+    // per option-α, never invoked.
+    public function testFrameworkModelMethodIsRejected(): void
+    {
+        $this->assertRejectedAsRelation(static function () {
+            RelationSentinel::with('refresh');
+        });
+    }
+
+    // withWhereHas() is the 4th resolution entry point and must reject too.
+    public function testWithWhereHasRejectsNonRelationMethod(): void
+    {
+        $this->assertRejectedAsRelation(static function () {
+            RelationSentinel::withWhereHas('destroyTheWorld');
+        });
+    }
 }

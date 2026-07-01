@@ -113,4 +113,22 @@ final class SoftDeleteScopeTest extends TestCase
         $this->assertMatchesRegularExpression('/\(.*status.*OR.*status.*\)/s', $sql);
         $this->assertMatchesRegularExpression('/\).*deleted_at.*IS\s+NOT\s+NULL/s', $sql);
     }
+
+    // refresh() reloads a row by PK with withTrashed(), so a trashed row is still
+    // found and exists() stays true (no re-INSERT on the next save()).
+    public function testRefreshReloadsTrashedRowWithoutScopeFilter(): void
+    {
+        $GLOBALS['wpdb']->resolver = static function () {
+            return [(object) ['id' => 1, 'deleted_at' => '2026-01-01 00:00:00']];
+        };
+
+        $post = new SoftPost(1); // constructor triggers refresh()
+
+        $this->assertTrue($post->exists(), 'refresh() must find the row even when trashed');
+        $this->assertStringNotContainsString(
+            'deleted_at',
+            $GLOBALS['wpdb']->last_query,
+            'refresh() must not scope out trashed rows (withTrashed)'
+        );
+    }
 }

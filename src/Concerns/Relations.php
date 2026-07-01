@@ -191,7 +191,8 @@ trait Relations
         $relateAs       = $this->getRelateAs();
         $relationalKeys = $this->getRelationalKeys();
 
-        if (!isset($relationalKeys[$relateAs])) {
+        // Short-circuit a null tag: isset($array[null]) is a deprecated null offset.
+        if ($relateAs === null || !isset($relationalKeys[$relateAs])) {
             throw new RuntimeException('No relation keys for relation tag [' . $relateAs . '].');
         }
 

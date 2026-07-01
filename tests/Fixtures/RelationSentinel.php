@@ -25,4 +25,10 @@ class RelationSentinel extends Model
     {
         return 'not a query builder';
     }
+
+    /** Returns a QueryBuilder, but NOT a relation query (no active relation key). */
+    public function plainQuery()
+    {
+        return self::query();
+    }
 }
