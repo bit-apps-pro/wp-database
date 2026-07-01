@@ -242,6 +242,15 @@ which is meaningful only for `withCount` and `withExists`.
 
 ## Limitations
 
+- **Relation names must not be untrusted input.** `with()`, `whereHas()`,
+  `withCount()` (and the other `with*` aggregates) resolve a relation by calling
+  the model method of that name. A name that is not a relation is rejected with a
+  `RuntimeException` ("Relation [x] is not defined on [Class]."), and framework
+  `Model` methods are rejected **without** being called — but a consumer model's
+  own no-arg method is invoked once before its non-relation return is discarded.
+  Pass only trusted, code-defined relation names (same contract as Eloquent),
+  never a raw request value.
+
 - **`belongsTo` and `hasOne` are the same alias; key naming is reversed from
   Laravel.** Both set the `oneToOne` relation. `$foreignKey` is the column on the
   **related** table and `$localKey` is the column on the **calling** model's

@@ -23,6 +23,9 @@ trait Relations
 
     private $_relationKeys = [];
 
+    /** Memoized framework-vs-consumer verdict per "class::method". */
+    private static $relationMethodCache = [];
+
     /**
      * Undocumented function.
      *
@@ -185,7 +188,14 @@ trait Relations
      */
     public function getActiveRelationKey()
     {
-        return $this->getRelationalKeys()[$this->getRelateAs()];
+        $relateAs       = $this->getRelateAs();
+        $relationalKeys = $this->getRelationalKeys();
+
+        if (!isset($relationalKeys[$relateAs])) {
+            throw new RuntimeException('No relation keys for relation tag [' . $relateAs . '].');
+        }
+
+        return $relationalKeys[$relateAs];
     }
 
     /**
@@ -200,14 +210,14 @@ trait Relations
         $preparedRelation = [];
         foreach ($relations as $key => $value) {
             if (\is_int($key) && \is_string($value) && ($method = explode(' ', $value)[0]) && method_exists($this, $method)) {
-                $preparedRelation[$value] = $this->{$method}();
+                $preparedRelation[$value] = $this->resolveRelationQuery($method);
                 unset($relations[$key]);
             }
         }
 
         foreach ($relations as $key => $value) {
             if (\is_string($key) && ($method = explode(' ', $key)[0]) && method_exists($this, $method)) {
-                $preparedRelation[$key] = $this->{$method}();
+                $preparedRelation[$key] = $this->resolveRelationQuery($method);
                 if ($value instanceof Closure) {
                     $value($preparedRelation[$key]);
                 }
@@ -215,6 +225,84 @@ trait Relations
         }
 
         return $preparedRelation;
+    }
+
+    /**
+     * Resolves an existing method name to its relation query, or fails loudly.
+     *
+     * The name has already passed method_exists() — a missing name is silently
+     * skipped by the caller (zero-BC for optional/typo'd relation lists). A method
+     * declared on the framework Model is rejected WITHOUT being called, so a
+     * side-effecting method (e.g. refresh()) can never run through a relation
+     * name; a consumer-declared method is called and its return validated.
+     *
+     * @param string $method
+     *
+     * @return QueryBuilder
+     */
+    private function resolveRelationQuery($method)
+    {
+        if ($this->isFrameworkModelMethod($method)) {
+            throw new RuntimeException($this->undefinedRelationMessage($method));
+        }
+
+        $result = $this->{$method}();
+
+        if (!$this->isRelationQuery($result)) {
+            throw new RuntimeException($this->undefinedRelationMessage($method));
+        }
+
+        return $result;
+    }
+
+    /**
+     * True when $method is declared on the framework Model itself (traits flatten
+     * into the using class, so relation/write helpers all report Model as their
+     * declaring class) rather than on a consumer subclass. Compares against
+     * Model::class so the check survives php-scoper's namespace prefixing.
+     *
+     * @param string $method
+     *
+     * @return bool
+     */
+    private function isFrameworkModelMethod($method)
+    {
+        $cacheKey = \get_class($this) . '::' . $method;
+        if (isset(self::$relationMethodCache[$cacheKey])) {
+            return self::$relationMethodCache[$cacheKey];
+        }
+
+        $declaringClass = (new \ReflectionMethod($this, $method))->getDeclaringClass()->getName();
+
+        return self::$relationMethodCache[$cacheKey] = $declaringClass === Model::class;
+    }
+
+    /**
+     * True when $result is a relation query: a QueryBuilder whose model carries
+     * an active relation-key entry.
+     *
+     * @param mixed $result
+     *
+     * @return bool
+     */
+    private function isRelationQuery($result)
+    {
+        if (!$result instanceof QueryBuilder) {
+            return false;
+        }
+
+        try {
+            $result->getModel()->getActiveRelationKey();
+        } catch (RuntimeException $e) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function undefinedRelationMessage($method)
+    {
+        return 'Relation [' . $method . '] is not defined on [' . \get_class($this) . '].';
     }
 
     public function prepareRelationName(string $relationName): array
