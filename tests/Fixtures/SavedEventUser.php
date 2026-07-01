@@ -14,16 +14,33 @@ class SavedEventUser extends Model
 
     public static $savedCount = 0;
 
+    public static $createdCount = 0;
+
+    public static $updatedCount = 0;
+
     protected $table = 'saved_event_users';
 
     protected $primaryKey = 'id';
 
     protected $fillable = ['name'];
 
+    public static function resetCounters()
+    {
+        static::$savedCount   = 0;
+        static::$createdCount = 0;
+        static::$updatedCount = 0;
+    }
+
     protected static function boot()
     {
         static::saved(function ($model) {
             static::$savedCount++;
+        });
+        static::created(function ($model) {
+            static::$createdCount++;
+        });
+        static::updated(function ($model) {
+            static::$updatedCount++;
         });
     }
 }

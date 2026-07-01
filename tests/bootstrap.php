@@ -140,3 +140,5 @@ require __DIR__ . '/Fixtures/Role.php';
 require __DIR__ . '/Fixtures/Member.php';
 require __DIR__ . '/Fixtures/PrefixedModel.php';
 require __DIR__ . '/Fixtures/RelationSentinel.php';
+require __DIR__ . '/Fixtures/RelationBaseModel.php';
+require __DIR__ . '/Fixtures/RelationLeafModel.php';

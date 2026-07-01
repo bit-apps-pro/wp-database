@@ -2,9 +2,12 @@
 
 namespace BitApps\WPDatabase\Tests;
 
+use BitApps\WPDatabase\Model;
+use BitApps\WPDatabase\Tests\Fixtures\RelationLeafModel;
 use BitApps\WPDatabase\Tests\Fixtures\RelationSentinel;
 use FakeWpdb;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use RuntimeException;
 use Throwable;
 
@@ -123,5 +126,46 @@ final class RelationResolutionSafetyTest extends TestCase
         $this->assertRejectedAsRelation(static function () {
             RelationSentinel::withWhereHas('destroyTheWorld');
         });
+    }
+
+    // A relation declared on an intermediate base class (leaf -> base -> Model)
+    // must resolve — its declaring class is the base, not the framework Model.
+    public function testRelationOnIntermediateBaseClassIsAllowed(): void
+    {
+        $threw = false;
+
+        try {
+            RelationLeafModel::with('widgets');
+        } catch (Throwable $e) {
+            $threw = true;
+        }
+
+        $this->assertFalse($threw, 'a relation declared on an intermediate base class must resolve');
+    }
+
+    // The framework-vs-consumer verdict is memoized per "class::method"; the
+    // cache must hold the correct boolean for each and not collide across methods.
+    public function testFrameworkVerdictIsMemoizedPerClassMethod(): void
+    {
+        $cacheProp = new ReflectionProperty(Model::class, 'relationMethodCache');
+        if (\PHP_VERSION_ID < 80100) {
+            $cacheProp->setAccessible(true); // required on 7.4; a deprecated no-op on 8.1+
+        }
+        $cacheProp->setValue(null, []);
+
+        try {
+            RelationSentinel::with('refresh'); // framework method -> rejected
+        } catch (RuntimeException $e) {
+            // expected
+        }
+        RelationSentinel::with('posts'); // consumer relation -> resolves
+
+        $cache  = $cacheProp->getValue();
+        $prefix = RelationSentinel::class;
+
+        $this->assertArrayHasKey($prefix . '::refresh', $cache);
+        $this->assertTrue($cache[$prefix . '::refresh'], 'refresh memoized as a framework method');
+        $this->assertArrayHasKey($prefix . '::posts', $cache);
+        $this->assertFalse($cache[$prefix . '::posts'], 'posts memoized as a consumer method');
     }
 }

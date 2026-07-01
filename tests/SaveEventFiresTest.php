@@ -15,14 +15,14 @@ final class SaveEventFiresTest extends TestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['wpdb']            = new FakeWpdb();
-        SavedEventUser::$savedCount = 0;
+        $GLOBALS['wpdb'] = new FakeWpdb();
+        SavedEventUser::resetCounters();
     }
 
     protected function tearDown(): void
     {
-        $GLOBALS['wpdb']            = new FakeWpdb();
-        SavedEventUser::$savedCount = 0;
+        $GLOBALS['wpdb'] = new FakeWpdb();
+        SavedEventUser::resetCounters();
     }
 
     public function testSavedFiresOnZeroRowUpdate(): void
@@ -35,11 +35,40 @@ final class SaveEventFiresTest extends TestCase
         $user->name = 'Grace';
 
         $GLOBALS['wpdb']->rows_affected = 0; // no-op UPDATE
-        SavedEventUser::$savedCount     = 0; // ignore anything fired during load
+        SavedEventUser::resetCounters();     // ignore anything fired during load
 
         $user->save();
 
         $this->assertSame(1, SavedEventUser::$savedCount, 'saved must fire on a 0-row UPDATE');
+    }
+
+    public function testUpdatedFiresOnZeroRowUpdate(): void
+    {
+        $GLOBALS['wpdb']->resolver = static function () {
+            return [(object) ['id' => 1, 'name' => 'Ada']];
+        };
+
+        $user       = SavedEventUser::query()->where('id', 1)->first();
+        $user->name = 'Grace';
+
+        $GLOBALS['wpdb']->rows_affected = 0;
+        SavedEventUser::resetCounters();
+
+        $user->save();
+
+        $this->assertSame(1, SavedEventUser::$updatedCount, 'updated must fire even on a 0-row UPDATE');
+    }
+
+    public function testCreatedFiresOnInsert(): void
+    {
+        $GLOBALS['wpdb']->insert_id     = 5;
+        $GLOBALS['wpdb']->rows_affected = 1;
+
+        $user       = new SavedEventUser();
+        $user->name = 'Ada';
+        $user->save();
+
+        $this->assertSame(1, SavedEventUser::$createdCount, 'created must fire on a successful INSERT');
     }
 
     public function testSavedFiresOnManualPkInsert(): void
