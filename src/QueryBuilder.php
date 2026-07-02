@@ -280,9 +280,8 @@ class QueryBuilder
         }
 
         // Wrap user conditions to prevent AND/OR precedence issues with the injected scope
-        $nestedQuery        = $this->newQuery();
+        $nestedQuery        = $this->newNestedQuery();
         $nestedQuery->where = $this->where;
-        $this->inheritQualifierContext($nestedQuery);
 
         return [
             ['query' => $nestedQuery],
@@ -866,7 +865,7 @@ class QueryBuilder
     {
         $map = [$this->_model->getTableWithoutPrefix() => $this->table];
         foreach ($this->joins as $join) {
-            if (isset($join['raw'], $join['prefixed']) && ($join['userAlias'] ?? null) === null) {
+            if ($join['userAlias'] === null) {
                 $map[$join['raw']] = $join['prefixed'];
             }
         }
@@ -887,7 +886,7 @@ class QueryBuilder
             $aliases[] = $this->_from;
         }
         foreach ($this->joins as $join) {
-            if (!empty($join['userAlias'])) {
+            if ($join['userAlias'] !== null) {
                 $aliases[] = $join['userAlias'];
             }
         }
@@ -907,11 +906,15 @@ class QueryBuilder
      */
     public function resolveQualifier($column)
     {
-        if (!\is_string($column) || strpos($column, '.') === false) {
+        if (!\is_string($column)) {
             return $column;
         }
 
-        $dot   = strpos($column, '.');
+        $dot = strpos($column, '.');
+        if ($dot === false) {
+            return $column;
+        }
+
         $left  = trim(substr($column, 0, $dot), '`');
         $right = substr($column, $dot + 1);
 
@@ -925,16 +928,17 @@ class QueryBuilder
     }
 
     /**
-     * Copies this query's join/from context onto a nested builder so its
-     * resolveQualifier() sees the same table map — a joined table's unprefixed
-     * name resolves inside a nested where group exactly as at top level. The
-     * joins never emit JOIN SQL for the nested builder (only its conditions are
-     * compiled), so this affects the map only.
+     * Creates a nested builder that compiles its conditions inside this query's
+     * table context: it shares the model (via newQuery()) plus this query's
+     * joins and from() alias, so resolveQualifier() inside a nested where group
+     * resolves joined-table qualifiers exactly as at top level. The joins stay
+     * inert — a nested builder compiles only its conditions, never JOIN SQL.
      *
      * @return QueryBuilder
      */
-    private function inheritQualifierContext(QueryBuilder $query)
+    private function newNestedQuery()
     {
+        $query        = $this->newQuery();
         $query->joins = $this->joins;
         $query->_from = $this->_from;
 
@@ -1631,8 +1635,7 @@ class QueryBuilder
 
         $conditions['bool'] = $bool;
         if ($params[0] instanceof Closure) {
-            $nestedQuery = $this->newQuery()->queryFor($type);
-            $this->inheritQualifierContext($nestedQuery);
+            $nestedQuery = $this->newNestedQuery()->queryFor($type);
             \call_user_func($params[0], $nestedQuery);
             $conditions['query'] = $nestedQuery;
             if (isset($params[1])) {
