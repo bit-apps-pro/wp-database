@@ -1223,8 +1223,25 @@ class QueryBuilder
         return $this->aggregate('MIN', $column);
     }
 
+    public function avg($column)
+    {
+        return $this->aggregate('AVG', $column);
+    }
+
+    public function sum($column)
+    {
+        return $this->aggregate('SUM', $column);
+    }
+
     public function aggregate($function, $column)
     {
+        $function = strtoupper((string) $function);
+        // $function is interpolated straight into SQL; allow only a bare
+        // identifier so parens/spaces/semicolons can't smuggle in a payload.
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
+            throw new RuntimeException('Invalid aggregate function name.');
+        }
+
         $query            = $this->clone();
         $query->select    = [];
         $query->selectRaw = ['columns' => [], 'bindings' => []];

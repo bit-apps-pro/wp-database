@@ -85,6 +85,8 @@ use RuntimeException;
  * @method static int                           count()
  * @method static mixed                         max($column)
  * @method static mixed                         min($column)
+ * @method static mixed                         avg($column)
+ * @method static mixed                         sum($column)
  * @method static bool|string                   delete()
  * @method static string|bool                   forceDelete()
  * @method static string|bool|Model             restore()
