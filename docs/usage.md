@@ -200,6 +200,7 @@ Contact::select('id', 'email')->get();
 Contact::select(['id', 'email'])->get();
 Contact::select(['id', 'title AS t'])->get();       // column alias — qualifies `title`, keeps AS `t`
 Contact::addSelect('phone')->get();                 // add to existing select
+Contact::select('id', 'email')->distinct()->get();  // SELECT DISTINCT
 Contact::selectRaw('COUNT(*) as total')->get();     // raw expression (NOT select())
 Contact::selectRaw('SUM(amount) as amt', [])->get();
 ```
@@ -276,7 +277,11 @@ Contact::query()
 
 Pass **unprefixed** table names — `join()` prepends the model's full table prefix
 (the same one the model's own table uses, including `wp_` for models with a custom
-`$prefix`). Qualify the `ON` columns as `table.column`.
+`$prefix`). Qualify columns as `table.column` using the **unprefixed** table name:
+the builder resolves a qualifier that matches the model's own table or a joined
+table to its physical, prefixed name in `select`, `where`/`having`, `ON`, `groupBy`
+and `orderBy`. Already-prefixed names, table aliases, and unknown tables are left
+untouched.
 
 ### Limit / offset / pagination
 
@@ -301,7 +306,14 @@ $page = Contact::where('is_active', 1)->paginate($pageNo = 1, $perPage = 20);
 Contact::where('is_active', 1)->count();   // int — always (returns 0, not null, on no rows)
 Contact::max('score');                     // mixed|null — null when the result set is empty
 Contact::min('score');                     // mixed|null — null when the result set is empty
+Contact::avg('score');                     // mixed|null
+Contact::sum('score');                     // mixed|null
+Contact::aggregate('GROUP_CONCAT', 'tag'); // any bare-identifier function
 ```
+
+> `aggregate()` accepts any SQL function whose name is a bare identifier
+> (letters, digits, underscore); other input is rejected. It does not emit
+> `COUNT(DISTINCT …)` — `distinct()` is ignored by `count()`/`paginate()`.
 
 ### Inspecting the SQL
 
