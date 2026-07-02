@@ -84,10 +84,11 @@ final class GrammarTest extends TestCase
         $this->assertStringContainsString('= p.id', $sql);
     }
 
-    public function testJoinWithDottedColumnsUntouched(): void
+    public function testJoinWithDottedColumnsResolvesKnownTables(): void
     {
+        // Unprefixed model/join table names in ON columns resolve to physical.
         $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->toSql();
-        $this->assertStringContainsString('= users.id', $sql);
+        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id', $sql);
     }
 
     public function testGroupBy(): void

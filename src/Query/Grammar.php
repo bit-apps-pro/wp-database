@@ -28,7 +28,8 @@ class Grammar
     {
         $query->resetBindings();
 
-        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $query->select);
+        $columns = array_map([$query, 'resolveQualifier'], $query->select);
+        $sql     = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
         $sql .= $this->prepareRawSelect($query);
         $sql .= ' FROM ' . $query->getTable();
         $sql .= $this->getFrom($query);
@@ -148,7 +149,7 @@ class Grammar
             return '';
         }
 
-        return ' GROUP BY ' . implode(',', $groupBy);
+        return ' GROUP BY ' . implode(',', array_map([$query, 'resolveQualifier'], $groupBy));
     }
 
     /**
@@ -184,7 +185,7 @@ class Grammar
                 $sql .= $order['raw'] . ', ';
                 $query->addBindings($order['bindings']);
             } elseif (isset($order['column'])) {
-                $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
+                $sql .= $query->resolveQualifier($order['column']) . ' ' . $order['direction'] . ', ';
             }
         }
 
@@ -258,7 +259,7 @@ class Grammar
     private function prepareColumnForWhere(QueryBuilder $query, $clause)
     {
         if (isset($clause['column'])) {
-            return ' ' . $query->prepareColumnName($clause['column']);
+            return ' ' . $query->resolveQualifier($query->prepareColumnName($clause['column']));
         }
     }
 
@@ -300,7 +301,7 @@ class Grammar
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
-            return ' ' . $clause['secondColumn'];
+            return ' ' . $query->resolveQualifier($clause['secondColumn']);
         }
 
         if (!isset($clause['value'])) {

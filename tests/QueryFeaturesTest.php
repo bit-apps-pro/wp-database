@@ -43,8 +43,9 @@ final class QueryFeaturesTest extends TestCase
         $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->toSql();
 
         $this->assertStringContainsString('INNER JOIN', $sql);
-        $this->assertStringContainsString('posts.user_id', $sql);
-        $this->assertStringContainsString('users.id', $sql);
+        // Unprefixed model/join table names in ON columns resolve to physical.
+        $this->assertStringContainsString('`wp_posts`.user_id', $sql);
+        $this->assertStringContainsString('`wp_users`.id', $sql);
     }
 
     public function testLeftJoinThenWhereKeepsBindingsInOrder(): void

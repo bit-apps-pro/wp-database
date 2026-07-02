@@ -76,11 +76,12 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     public function testOnAndOrOnAppendToSameJoin(): void
     {
+        // Unprefixed model/join table names in ON columns resolve to physical.
         $and = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->on('posts.status', '=', 'users.state')->toSql();
-        $this->assertStringContainsString('posts.user_id = users.id AND posts.status = users.state', $and);
+        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id AND `wp_posts`.status = `wp_users`.state', $and);
 
         $or = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->orOn('posts.status', '=', 'users.state')->toSql();
-        $this->assertStringContainsString('posts.user_id = users.id OR posts.status = users.state', $or);
+        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id OR `wp_posts`.status = `wp_users`.state', $or);
     }
 
     public function testJoinOnCustomPrefixModelQualifiesBaseColumnWithFullPrefix(): void

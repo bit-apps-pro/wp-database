@@ -841,13 +841,86 @@ class QueryBuilder
 
         $on[]          = $this->prepareOn($reference, $firstColumn, $operator, $secondColumn, 'AND');
         $this->joins[] = [
-            'table' => $tableSql,
-            'alias' => $reference,
-            'on'    => $on,
-            'type'  => $type,
+            'table'     => $tableSql,
+            'alias'     => $reference,
+            'on'        => $on,
+            'type'      => $type,
+            'raw'       => $rawTable,
+            'prefixed'  => $prefixedTable,
+            'userAlias' => $alias,
         ];
 
         return $this;
+    }
+
+    /**
+     * Maps each unprefixed table name this query knows about (the model's own
+     * table plus every non-aliased join) to its physical, prefixed name.
+     * Aliased joins are excluded: they are referenced by their alias, not the
+     * physical table, so their columns must not be rewritten.
+     *
+     * @return array<string, string>
+     */
+    public function getTableMap()
+    {
+        $map = [$this->_model->getTableWithoutPrefix() => $this->table];
+        foreach ($this->joins as $join) {
+            if (isset($join['raw'], $join['prefixed']) && ($join['userAlias'] ?? null) === null) {
+                $map[$join['raw']] = $join['prefixed'];
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Table aliases in scope (from() alias + every join alias). A qualifier that
+     * matches an alias is never rewritten to a physical table name.
+     *
+     * @return array<int, string>
+     */
+    public function getTableAliases()
+    {
+        $aliases = [];
+        if (!\is_null($this->_from)) {
+            $aliases[] = $this->_from;
+        }
+        foreach ($this->joins as $join) {
+            if (!empty($join['userAlias'])) {
+                $aliases[] = $join['userAlias'];
+            }
+        }
+
+        return $aliases;
+    }
+
+    /**
+     * Rewrites a qualified column whose table part is an unprefixed name this
+     * query owns (`users.id` -> `` `wp_users`.id ``). Aliases win over the map,
+     * and unknown / already-physical qualifiers pass through unchanged.
+     * Idempotent: a physical qualifier is never a map key.
+     *
+     * @param mixed $column
+     *
+     * @return mixed
+     */
+    public function resolveQualifier($column)
+    {
+        if (!\is_string($column) || strpos($column, '.') === false) {
+            return $column;
+        }
+
+        $dot   = strpos($column, '.');
+        $left  = trim(substr($column, 0, $dot), '`');
+        $right = substr($column, $dot + 1);
+
+        if (\in_array($left, $this->getTableAliases(), true)) {
+            return $column;
+        }
+
+        $map = $this->getTableMap();
+
+        return isset($map[$left]) ? '`' . $map[$left] . '`.' . $right : $column;
     }
 
     /**
