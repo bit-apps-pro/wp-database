@@ -28,7 +28,7 @@ class Grammar
     {
         $query->resetBindings();
 
-        $sql = 'SELECT ' . implode(',', $query->select);
+        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $query->select);
         $sql .= $this->prepareRawSelect($query);
         $sql .= ' FROM ' . $query->getTable();
         $sql .= $this->getFrom($query);

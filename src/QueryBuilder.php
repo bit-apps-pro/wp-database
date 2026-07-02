@@ -462,6 +462,29 @@ class QueryBuilder
     }
 
     /**
+     * Adds DISTINCT to the SELECT. Note: this does not emit COUNT(DISTINCT ...)
+     * and is not pagination-aware (count()/paginate() ignore it).
+     *
+     * @return $this
+     */
+    public function distinct()
+    {
+        $this->distinct = true;
+
+        return $this;
+    }
+
+    /**
+     * Whether DISTINCT was requested for this SELECT.
+     *
+     * @return bool
+     */
+    public function isDistinct()
+    {
+        return $this->distinct;
+    }
+
+    /**
      * Prepare the query and execute.
      *
      * @param array $columns

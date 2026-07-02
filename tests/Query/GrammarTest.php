@@ -137,4 +137,20 @@ final class GrammarTest extends TestCase
         $this->assertIsString($query->grammar()->compileSelect($query));
         $this->assertInstanceOf(QueryBuilder::class, $query);
     }
+
+    public function testDistinctEmitsSelectDistinct(): void
+    {
+        $this->assertSame(
+            'SELECT DISTINCT `wp_users`.`id` FROM wp_users',
+            (new User())->select('id')->distinct()->toSql()
+        );
+    }
+
+    public function testWithoutDistinctSelectIsUnchanged(): void
+    {
+        $this->assertSame(
+            'SELECT `wp_users`.`id` FROM wp_users',
+            (new User())->select('id')->toSql()
+        );
+    }
 }
