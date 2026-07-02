@@ -282,6 +282,7 @@ class QueryBuilder
         // Wrap user conditions to prevent AND/OR precedence issues with the injected scope
         $nestedQuery        = $this->newQuery();
         $nestedQuery->where = $this->where;
+        $this->inheritQualifierContext($nestedQuery);
 
         return [
             ['query' => $nestedQuery],
@@ -924,6 +925,23 @@ class QueryBuilder
     }
 
     /**
+     * Copies this query's join/from context onto a nested builder so its
+     * resolveQualifier() sees the same table map — a joined table's unprefixed
+     * name resolves inside a nested where group exactly as at top level. The
+     * joins never emit JOIN SQL for the nested builder (only its conditions are
+     * compiled), so this affects the map only.
+     *
+     * @return QueryBuilder
+     */
+    private function inheritQualifierContext(QueryBuilder $query)
+    {
+        $query->joins = $this->joins;
+        $query->_from = $this->_from;
+
+        return $query;
+    }
+
+    /**
      * Sets left join
      *
      * @param string $table
@@ -1308,20 +1326,33 @@ class QueryBuilder
 
     public function aggregate($function, $column)
     {
-        $function = strtoupper((string) $function);
-        // $function is interpolated straight into SQL; allow only a bare
-        // identifier so parens/spaces/semicolons can't smuggle in a payload.
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
-            throw new RuntimeException('Invalid aggregate function name.');
-        }
+        $this->assertSafeAggregateFunction($function);
 
         $query            = $this->clone();
         $query->select    = [];
         $query->selectRaw = ['columns' => [], 'bindings' => []];
+        $query->distinct  = false;
         $preparedColumn   = $column === '*' ? '*' : $query->prepareColumnName($column);
         $result           = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
 
         return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
+    }
+
+    /**
+     * Guards an aggregate function name that is interpolated straight into SQL:
+     * only a bare identifier is allowed, so parens/spaces/semicolons cannot
+     * smuggle in a payload. Case is preserved (SQL function names are
+     * case-insensitive).
+     *
+     * @param mixed $function
+     *
+     * @return void
+     */
+    private function assertSafeAggregateFunction($function)
+    {
+        if (!\is_string($function) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
+            throw new RuntimeException('Invalid aggregate function name.');
+        }
     }
 
     public function delete()
@@ -1601,6 +1632,7 @@ class QueryBuilder
         $conditions['bool'] = $bool;
         if ($params[0] instanceof Closure) {
             $nestedQuery = $this->newQuery()->queryFor($type);
+            $this->inheritQualifierContext($nestedQuery);
             \call_user_func($params[0], $nestedQuery);
             $conditions['query'] = $nestedQuery;
             if (isset($params[1])) {

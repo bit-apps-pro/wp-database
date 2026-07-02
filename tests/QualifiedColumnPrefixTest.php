@@ -2,6 +2,7 @@
 
 namespace BitApps\WPDatabase\Tests;
 
+use BitApps\WPDatabase\Tests\Fixtures\SoftPost;
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use PHPUnit\Framework\TestCase;
 
@@ -91,5 +92,23 @@ final class QualifiedColumnPrefixTest extends TestCase
     public function testResolveQualifierLeavesUnqualifiedColumnAlone(): void
     {
         $this->assertSame('id', User::query()->resolveQualifier('id'));
+    }
+
+    public function testJoinedTableResolvesInsideNestedClosure(): void
+    {
+        $sql = (new User())->join('posts', 'user_id', '=', 'id')
+            ->where(function ($q) {
+                $q->where('posts.status', 1);
+            })->toSql();
+
+        $this->assertStringContainsString('`wp_posts`.status', $sql);
+    }
+
+    public function testJoinedTableResolvesUnderSoftDeleteScope(): void
+    {
+        $sql = (new SoftPost())->join('users', 'post_id', '=', 'id')
+            ->where('users.role', 'admin')->toSql();
+
+        $this->assertStringContainsString('`wp_users`.role', $sql);
     }
 }

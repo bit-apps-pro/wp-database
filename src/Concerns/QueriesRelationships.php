@@ -144,6 +144,8 @@ trait QueriesRelationships
             return $this;
         }
 
+        $this->assertSafeAggregateFunction($function);
+
         if (empty($this->select)) {
             $this->select = ["`{$this->_model->getTable()}`.*"];
         }
