@@ -6,3 +6,6 @@ lefthook.yml export-ignore
 .php-cs-fixer.php export-ignore
 .gitattributes export-ignore
 .gitignore export-ignore
+/tests export-ignore
+phpunit.xml export-ignore
+phpcs.xml export-ignore
