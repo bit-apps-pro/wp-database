@@ -832,7 +832,7 @@ class QueryBuilder
      */
     public function join($table, $firstColumn, $operator = null, $secondColumn = null, $type = 'INNER')
     {
-        $parts         = preg_split('/ as /i', $table);
+        $parts         = preg_split('/\s+as\s+/i', trim($table), 2);
         $rawTable      = $parts[0];
         $alias         = isset($parts[1]) ? $parts[1] : null;
         $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
@@ -1711,7 +1711,10 @@ class QueryBuilder
             $operator     = '=';
         }
 
-        if (!\is_null($secondColumn) && strpos($secondColumn, '.') === false) {
+        // Qualify only a bare column identifier; leave constants, quoted values
+        // and function calls (10, 'active', NOW()) untouched, and dotted names
+        // that are already qualified.
+        if (!\is_null($secondColumn) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $secondColumn)) {
             $secondColumn = $table . '.' . $secondColumn;
         }
 

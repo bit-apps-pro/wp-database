@@ -91,6 +91,27 @@ final class GrammarTest extends TestCase
         $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id', $sql);
     }
 
+    public function testJoinAliasSplitToleratesExtraWhitespace(): void
+    {
+        $sql = (new User())->join('posts   as   p', 'user_id', '=', 'id')->toSql();
+        $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
+        $this->assertStringContainsString('= p.id', $sql);
+    }
+
+    public function testJoinOnConstantSecondOperandNotPrefixed(): void
+    {
+        $sql = (new User())->join('posts', 'posts.owner_id', '=', '5')->toSql();
+        $this->assertStringContainsString('= 5', $sql);
+        $this->assertStringNotContainsString('.5', $sql);
+    }
+
+    public function testJoinOnFunctionSecondOperandNotPrefixed(): void
+    {
+        $sql = (new User())->join('posts', 'posts.created', '<', 'NOW()')->toSql();
+        $this->assertStringContainsString('< NOW()', $sql);
+        $this->assertStringNotContainsString('.NOW', $sql);
+    }
+
     public function testGroupBy(): void
     {
         $this->assertSame(
