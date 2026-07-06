@@ -30,7 +30,7 @@ API and runtime behavior change, it is a **major** version bump.
 | 11 | Blueprint | `binary()` removed | Low |
 | 12 | QueryBuilder | exception type/message changed in `exec()` | Low |
 | 13 | Model | soft-delete reads exclude trashed by default (opt out with `$soft_delete_scope = false`) | Medium |
-| 14 | Composer | minimum PHP raised to **8.2** (was 7.4) — package no longer installs on PHP < 8.2 | High |
+| 14 | Composer | minimum PHP raised to **8.0** (was 7.4) — package no longer installs on PHP < 8.0 | High |
 
 ---
 
@@ -343,18 +343,18 @@ re-hydrating a trashed model still reports `exists() === true`.
 
 ---
 
-### 2.14 Minimum PHP is now 8.2
+### 2.14 Minimum PHP is now 8.0
 
-`composer.json` `require.php` changed from `^7.4 || ^8.0` to `>=8.2`. The package
-no longer installs on PHP 7.4, 8.0, or 8.1.
+`composer.json` `require.php` changed from `^7.4 || ^8.0` to `>=8.0`. The package
+no longer installs on PHP 7.4.
 
-**Why it breaks:** a plugin whose own `require.php` still allows < 8.2 can no
+**Why it breaks:** a plugin whose own `require.php` still allows < 8.0 can no
 longer resolve this package version via Composer.
 
-**Migration:** raise the consuming plugin's minimum PHP to 8.2 (and its runtime)
+**Migration:** raise the consuming plugin's minimum PHP to 8.0 (and its runtime)
 before upgrading. Stay on the previous release if you must support older PHP.
 The test suite runs on PHPUnit 11 (`composer test`); the compatibility gate now
-targets `8.2-`.
+targets `8.0-`.
 
 ---
 
