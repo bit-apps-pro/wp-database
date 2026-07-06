@@ -132,6 +132,36 @@ final class Connection
         }
     }
 
+    /**
+     * Starts transaction
+     * 
+     * @return bool
+     */
+    public static function startTransaction()
+    {
+        return self::query('START TRANSACTION');
+    }
+
+    /**
+     * Commits current transaction
+     *
+     * @return bool
+     */
+    public static function commit()
+    {
+        return self::query('COMMIT');
+    }
+
+    /**
+     * Rollback previously execute query
+     * 
+     * @return void
+     */
+    public static function rollback()
+    {
+        return self::query('ROLLBACK');
+    }
+
     private static function _forwadCall($instance, $method, $args)
     {
         if (self::$_isLogEnabled && $method === 'query') {

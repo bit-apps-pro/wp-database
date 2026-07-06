@@ -43,8 +43,8 @@ use RuntimeException;
  * @method Blueprint float($name, $length = null)
  * @method Blueprint double($name, $length = null)
  * @method Blueprint double_precision($name, $length = null)
- * @method Blueprint decimal($name, $length = null)
- * @method Blueprint dec($name, $length = null)
+ * @method Blueprint decimal($name, $precision = null, $scale = null)
+ * @method Blueprint dec($name, $precision = null, $scale = null)
  * @method Blueprint date($name)
  * @method Blueprint datetime($name)
  * @method Blueprint timestamp($name)
@@ -99,7 +99,7 @@ class Blueprint
      * @param string       $prefix   Table prefix
      * @param null|Closure $callback Closure to build the blueprint
      */
-    public function __construct($table, $method, $prefix = '', Closure $callback = null)
+    public function __construct($table, $method, $prefix = '', ?Closure $callback = null)
     {
         $this->_prefix   = $prefix;
         $this->table     = "{$prefix}{$table}";
@@ -116,7 +116,9 @@ class Blueprint
     {
         $formattedMethodName = strtoupper(str_replace('_', ' ', $method));
         if ($this->isValidType($formattedMethodName)) {
-            if (\count($parameters) > 2) {
+            // Only decimal/dec take a scale (name, precision, scale); others are name + length.
+            $maxParams = \in_array($method, ['decimal', 'dec'], true) ? 3 : 2;
+            if (\count($parameters) > $maxParams) {
                 throw new Exception('Too many parameters');
             }
 
@@ -204,6 +206,7 @@ class Blueprint
     {
         $queryToAdd[] = $this->addColumnQuery();
         $queryToAdd[] = $this->dropColumnQuery();
+        $queryToAdd[] = $this->renameColumnQuery();
         $queryToAdd   = $queryToAdd + $this->_edit;
         $queryToAdd[] = $this->addPrimaryKeyQuery();
         $queryToAdd[] = $this->addUniqueIndexQuery();
@@ -237,11 +240,13 @@ class Blueprint
         return $this;
     }
 
-    public function addColumn($name, $type, $length = null)
+    public function addColumn($name, $type, $length = null, $scale = null)
     {
         if ($this->method === 'addColumn') {
             $this->_sql = "ALTER TABLE {$this->table} ADD {$name} {$type}";
-            if ($length) {
+            if (!\is_null($scale)) {
+                $this->_sql .= "({$length}, {$scale})";
+            } elseif ($length) {
                 $this->_sql .= "({$length})";
             }
         } else {
@@ -250,7 +255,10 @@ class Blueprint
                 'name' => $name,
                 'type' => $type,
             ];
-            if (!\is_null($length)) {
+            if (!\is_null($scale)) {
+                $this->columns[$this->columnIndex]['precision'] = $length;
+                $this->columns[$this->columnIndex]['scale']     = $scale;
+            } elseif (!\is_null($length)) {
                 $this->length($length);
             }
         }
@@ -272,7 +280,7 @@ class Blueprint
     public function renameColumn($column, $newName)
     {
         if ($this->method === 'renameColumn') {
-            $this->_sql = "ALTER TABLE {$this->table} CHANGE {$column} {$newName}";
+            $this->_sql = "ALTER TABLE {$this->table} RENAME COLUMN {$column} TO {$newName}";
         } else {
             $this->columnsToRename[] = [
                 'column'   => $column,
@@ -292,7 +300,7 @@ class Blueprint
                     $query .= "\n, ";
                 }
 
-                $query .= "CHANGE {$column['column']} {$column['new_name']}";
+                $query .= "RENAME COLUMN {$column['column']} TO {$column['new_name']}";
             }
         }
 
@@ -405,13 +413,6 @@ class Blueprint
         return $this;
     }
 
-    public function binary()
-    {
-        $this->columns[$this->columnIndex]['props'][] = 'BINARY';
-
-        return $this;
-    }
-
     public function primary()
     {
         $this->primaryKey[]                            = $this->columns[$this->columnIndex]['name'];
@@ -434,9 +435,13 @@ class Blueprint
         return $this;
     }
 
-    public function unique()
+    public function unique($column = null)
     {
-        $this->uniqueIndex[] = $this->columns[$this->columnIndex]['name'];
+        if (\is_null($column)) {
+            $this->uniqueIndex[] = $this->columns[$this->columnIndex]['name'];
+        } else {
+            $this->uniqueIndex[] = $column;
+        }
 
         return $this;
     }
@@ -502,83 +507,35 @@ class Blueprint
 
     public function dropForeign($keys)
     {
-        if ($this->method === 'dropForeign') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $sql     = '';
-            $idCount = \count($keys) - 1;
-            $i       = 0;
-            if (\is_array($keys)) {
-                foreach ($keys as $key) {
-                    if ($i == $idCount) {
-                        $sql .= " DROP FOREIGN KEY `{$key}`";
-                    } else {
-                        $sql .= " DROP FOREIGN KEY `{$key}`,";
-                    }
-
-                    $i++;
-                }
-            } else {
-                $sql .= " DROP FOREIGN KEY `{$keys}`";
-            }
-
-            $this->_edit['dropForeign'] = $sql;
-        }
+        $this->applyDropClause('dropForeign', 'dropForeign', $this->buildDropForeignClause($keys));
 
         return $this;
     }
 
     public function dropIndex($indexes)
     {
-        if ($this->method === 'dropIndex') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $sql     = '';
-            $idCount = \count($indexes) - 1;
-            $i       = 0;
-            if (\is_array($indexes)) {
-                foreach ($indexes as $index) {
-                    if ($i == $idCount) {
-                        $sql .= " DROP INDEX `{$index}`";
-                    } else {
-                        $sql .= " DROP INDEX `{$index}`,";
-                    }
-
-                    $i++;
-                }
-            } else {
-                $sql .= " DROP INDEX `{$indexes}`";
-            }
-
-            $this->_edit['dropIndex'] = $sql;
-        }
+        $this->applyDropClause('dropIndex', 'dropIndex', $this->buildDropIndexClause($indexes));
 
         return $this;
     }
 
     public function dropPrimary()
     {
-        if ($this->method === 'dropPrimary') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $this->_edit['dropPrimary'] = ' DROP PRIMARY KEY';
-        }
+        $this->applyDropClause('dropPrimary', 'dropPrimary', ' DROP PRIMARY KEY');
 
         return $this;
     }
 
     public function dropUnique($indexes)
     {
-        return $this->dropIndex($indexes);
+        $this->applyDropClause('dropUnique', 'dropIndex', $this->buildDropIndexClause($indexes));
+
+        return $this;
     }
 
     public function dropTimestamps()
     {
-        if ($this->method === 'dropTimestamps') {
-            $this->_sql = "ALTER TABLE `{$this->table}`";
-        } else {
-            $this->_edit['dropTimestamps'] = ' DROP COLUMN created_at, DROP COLUMN updated_at';
-        }
+        $this->applyDropClause('dropTimestamps', 'dropTimestamps', ' DROP COLUMN created_at, DROP COLUMN updated_at');
 
         return $this;
     }
@@ -597,6 +554,43 @@ class Blueprint
         $this->columns[$this->columnIndex]['length'] = $length;
 
         return $this;
+    }
+
+    private function buildDropIndexClause($indexes)
+    {
+        if (\is_array($indexes)) {
+            $clauses = [];
+            foreach ($indexes as $index) {
+                $clauses[] = " DROP INDEX `{$index}`";
+            }
+
+            return implode(',', $clauses);
+        }
+
+        return " DROP INDEX `{$indexes}`";
+    }
+
+    private function buildDropForeignClause($keys)
+    {
+        if (\is_array($keys)) {
+            $clauses = [];
+            foreach ($keys as $key) {
+                $clauses[] = " DROP FOREIGN KEY `{$key}`";
+            }
+
+            return implode(',', $clauses);
+        }
+
+        return " DROP FOREIGN KEY `{$keys}`";
+    }
+
+    private function applyDropClause($directMethod, $editKey, $clause)
+    {
+        if ($this->method === $directMethod) {
+            $this->_sql = "ALTER TABLE `{$this->table}`" . $clause;
+        } else {
+            $this->_edit[$editKey] = $clause;
+        }
     }
 
     private function getCollation()
@@ -642,18 +636,16 @@ class Blueprint
                 $query .= "\n, ";
             }
 
-            if ($this->method === 'edit') {
-                $query .= 'ADD COLUMN ';
-            }
-
             if (isset($column['change'])) {
-                $query .= 'CHANGE COLUMN ';
+                $query .= 'MODIFY COLUMN ';
+            } elseif ($this->method === 'edit') {
+                $query .= 'ADD COLUMN ';
             }
 
             $query .= $column['name'] . ' ' . $column['type'];
             if (!empty($column['length'])) {
                 $query .= '(' . $column['length'] . ')';
-            } elseif (!empty($column['precision']) && !empty($column['scale'])) {
+            } elseif (isset($column['precision'], $column['scale'])) {
                 $query .= '(' . $column['precision'] . ', ' . $column['scale'] . ')';
             } else {
                 $query .= ' ';
@@ -751,12 +743,17 @@ class Blueprint
             return '';
         }
 
-        $query = '';
+        $addPrefix = $this->method === 'edit' ? ' ADD ' : '';
+        $query     = '';
         foreach ($this->uniqueIndex as $key => $uniqueColumn) {
-            $query .= "\nUNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
+            if (\is_array($uniqueColumn)) {
+                $query .= "\n" . $addPrefix . 'UNIQUE INDEX ' . implode('_', $uniqueColumn) . '_UNIQUE (' . implode(',', $uniqueColumn) . '),';
+            } else {
+                $query .= "\n" . $addPrefix . "UNIQUE INDEX {$uniqueColumn}_UNIQUE ({$uniqueColumn} ASC),";
+            }
         }
 
-        return $query;
+        return rtrim($query, ',');
     }
 
     private function addForeignKeyQuery()
@@ -767,14 +764,6 @@ class Blueprint
 
         $query = '';
         foreach ($this->foreignKeys as $fkId => $foreignKey) {
-            /* $query .= "\nCONSTRAINT f_c_{$this->table}_{$fkId} "
-                ." FOREIGN KEY f_key_{$this->table}_{$fkId} ({$foreignKey['column']})"
-                ." REFERENCES {$foreignKey['ref']} ({$foreignKey['ref_col']})"
-                . (isset($foreignKey['onUpdate']) ? " ON DELETE {$foreignKey['onUpdate']}" : null)
-                . (isset($foreignKey['onUpdate']) ? " ON UPDATE {$foreignKey['onUpdate']}" : null)
-                . (isset($foreignKey['both']) ? " ON DELETE {$foreignKey['both']} ON UPDATE {$foreignKey['both']}" : null)
-                . ","; */
-
             $query .= " FOREIGN KEY ({$foreignKey['column']}) REFERENCES {$foreignKey['ref']} ";
             $query .= "({$foreignKey['ref_col']})";
             $query .= (isset($foreignKey['onDelete']) ? " ON DELETE {$foreignKey['onDelete']}" : null);

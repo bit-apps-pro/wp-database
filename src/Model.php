@@ -8,8 +8,10 @@ namespace BitApps\WPDatabase;
 
 use ArrayAccess;
 
-use DateTime;
+use BitApps\WPDatabase\Concerns\HasEvents;
 
+use BitApps\WPDatabase\Concerns\Relations;
+use DateTime;
 use JsonSerializable;
 use ReturnTypeWillChange;
 use RuntimeException;
@@ -17,63 +19,91 @@ use RuntimeException;
 /**
  * Abstract class for model.
  *
- * @method static QueryBuilder                      from($_from)
- * @method static Model                             getModel()
- * @method static QueryBuilder                      queryFor($_for)
- * @method static QueryBuilder                      newQuery()
- * @method static void                              addBindings($bindings)
- * @method static array                             getBindings()
- * @method static Model|array<int,     Model>|false all($columns = ['*'])
- * @method static QueryBuilder                      select($columns = ['*'])
- * @method static Model|array<int,     Model>|false get($columns = ['*'])
- * @method static Model|bool                        first()
- * @method static Model|array<int,     Model>|false find($attributes)
- * @method static Model|bool                        findOne($attributes)
- * @method static string|string[]|null              getConditions(QueryBuilder $query, $type = 'where')
- * @method static string                            prepareOperatorForWhere($clause)
- * @method static QueryBuilder                      where(...$params)
- * @method static QueryBuilder                      whereIn(...$params)
- * @method static QueryBuilder                      orWhere(...$params)
- * @method static QueryBuilder                      whereRaw($sql, $bindings = [])
- * @method static QueryBuilder                      whereNull($column)
- * @method static QueryBuilder                      whereNotNull($column)
- * @method static QueryBuilder                      whereBetween($column, $start, $end)
- * @method static QueryBuilder                      orWhereBetween($column, $start, $end)
- * @method static QueryBuilder                      paginate($perPage = 10, $pageNo = 0)
- * @method static QueryBuilder                      groupBy($columns)
- * @method static QueryBuilder                      having(...$params)
- * @method static QueryBuilder                      orHaving(...$params)
- * @method static QueryBuilder                      join($table, $first_column, $operator = null, $second_column = null, $type = 'INNER')
- * @method static QueryBuilder                      leftJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      rightJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      fullJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      crossJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                      on($first_column, $operator = null, $second_column = null, $bool = 'AND')
- * @method static QueryBuilder                      orOn($first_column, $operator = null, $second_column = null)
- * @method static string                            getOrderBy()
- * @method static QueryBuilder                      orderBy($column)
- * @method static QueryBuilder                      asc()
- * @method static QueryBuilder                      desc()
- * @method static object|null                       raw($sql, $bindings = [])
- * @method static QueryBuilder                      take($count)
- * @method static QueryBuilder                      skip($count)
- * @method static QueryBuilder                      getOffset()
- * @method static Model|array<int,     Model>|false insert($attributes = [])
- * @method static QueryBuilder                      update($attributes = [])
- * @method static string|bool                       destroy($ids = [])
- * @method static bool                              save()
- * @method static QueryBuilder                      withCount()
- * @method static null|int                          count()
- * @method static bool|string                       delete()
- * @method static QueryBuilder                      with($relation)
- * @method static void                              startTransaction()
- * @method static void                              commit()
- * @method static void                              rollback()
- * @method static string                            prepare($sql = null)
+ * Query-builder calls (where/select/get/with/withCount/...) are forwarded to
+ * {@see QueryBuilder} through __call/__callStatic.
+ *
+ * IDE support: the @method tags below give autocomplete in every editor
+ * (PhpStorm + VS Code/Intelephense); the @mixin lets PhpStorm Ctrl+Click jump
+ * to the real definitions. For autocomplete AND Ctrl+Click that work
+ * everywhere, start chains with the real static {@see Model::query()}.
+ *
+ * @method static QueryBuilder                  from($_from)
+ * @method static Model                         getModel()
+ * @method static QueryBuilder                  queryFor($_for)
+ * @method static QueryBuilder                  newQuery()
+ * @method static void                          addBindings($bindings)
+ * @method static array                         getBindings()
+ * @method static Model|array<int, Model>|false all($columns = ['*'])
+ * @method static QueryBuilder                  select($columns = ['*'])
+ * @method static QueryBuilder                  addSelect($columns)
+ * @method static QueryBuilder                  selectRaw($column, array $bindings = [])
+ * @method static Model|array<int, Model>|false get($columns = ['*'])
+ * @method static Model|bool                    first()
+ * @method static Model|array<int, Model>|false find($attributes)
+ * @method static Model|bool                    findOne($attributes)
+ * @method static QueryBuilder                  where(...$params)
+ * @method static QueryBuilder                  whereIn(...$params)
+ * @method static QueryBuilder                  orWhere(...$params)
+ * @method static QueryBuilder                  whereRaw($sql, $bindings = [])
+ * @method static QueryBuilder                  orWhereRaw($sql, $bindings = [])
+ * @method static QueryBuilder                  whereNull($column)
+ * @method static QueryBuilder                  whereNotNull($column)
+ * @method static QueryBuilder                  whereBetween($column, $start, $end)
+ * @method static QueryBuilder                  orWhereBetween($column, $start, $end)
+ * @method static QueryBuilder                  when($value = null, ?callable $callback = null, ?callable $default = null)
+ * @method static array                         paginate($pageNo = 0, $perPage = 10)
+ * @method static QueryBuilder                  groupBy($columns)
+ * @method static QueryBuilder                  having(...$params)
+ * @method static QueryBuilder                  orHaving(...$params)
+ * @method static QueryBuilder                  join($table, $first_column, $operator = null, $second_column = null, $type = 'INNER')
+ * @method static QueryBuilder                  leftJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  rightJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  fullJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  crossJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  orderBy($column)
+ * @method static QueryBuilder                  orderByRaw($query, $bindings = [])
+ * @method static QueryBuilder                  asc()
+ * @method static QueryBuilder                  desc()
+ * @method static object|null                   raw($sql, $bindings = [])
+ * @method static QueryBuilder                  take($count)
+ * @method static QueryBuilder                  skip($count)
+ * @method static Model|array<int, Model>|false insert($attributes = [])
+ * @method static Model|bool                    update($attributes = [])
+ * @method static string|bool                   destroy($ids = [])
+ * @method static Model|bool                    save()
+ * @method static Model|bool                    upsert(array $values, ?array $update = null)
+ * @method static QueryBuilder                  with(string|array $relation, ?Closure $callback = null)
+ * @method static QueryBuilder                  withPivot($columns)
+ * @method static QueryBuilder                  withCount(string|array $relation)
+ * @method static QueryBuilder                  withMin(string|array $relation)
+ * @method static QueryBuilder                  withMax(string|array $relation)
+ * @method static QueryBuilder                  withAvg(string|array $relation)
+ * @method static QueryBuilder                  withSum(string|array $relation)
+ * @method static QueryBuilder                  withExists(string|array $relation)
+ * @method static QueryBuilder                  whereHas(string|array $relation, ?Closure $callback = null)
+ * @method static QueryBuilder                  withWhereHas(string|array $relation, ?Closure $callback = null)
+ * @method static int                           count()
+ * @method static mixed                         max($column)
+ * @method static mixed                         min($column)
+ * @method static mixed                         avg($column)
+ * @method static mixed                         sum($column)
+ * @method static bool|string                   delete()
+ * @method static string|bool                   forceDelete()
+ * @method static string|bool|Model             restore()
+ * @method static string                        toSql()
+ * @method static string                        prepare($sql = null)
+ * @method static QueryBuilder                  withTrashed()
+ * @method static QueryBuilder                  onlyTrashed()
+ *
+ * @mixin \BitApps\WPDatabase\QueryBuilder
  */
 abstract class Model implements ArrayAccess, JsonSerializable
 {
-    use Relations;
+    use Relations, HasEvents;
+
+    public const RELATE_AS_PIVOT = 'belongsToManyPivot';
+
+    public const PIVOT_ATTRIBUTE_PREFIX = 'pivot_';
 
     public $timestamps = true;
 
@@ -90,6 +120,8 @@ abstract class Model implements ArrayAccess, JsonSerializable
     protected $attributes = [];
 
     protected $dirty = [];
+
+    protected static $booted = [];
 
     private static $_instance;
 
@@ -130,17 +162,13 @@ abstract class Model implements ArrayAccess, JsonSerializable
             $this->_tableWithoutPrefix = $this->table;
         }
 
-        $dbPrefix = Connection::wpPrefix();
-
-        if ($this->prefix === '') {
-            $dbPrefix = Connection::getPrefix();
-        }
-
-        $this->table = $dbPrefix . $this->prefix . $this->_tableWithoutPrefix;
+        $this->table = $this->getTablePrefix() . $this->_tableWithoutPrefix;
 
         if (!isset($this->primaryKey)) {
             $this->primaryKey = 'id';
         }
+
+        $this->bootIfNotBooted();
 
         if (\is_array($attributes)) {
             $this->fill($attributes);
@@ -212,7 +240,10 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return false;
         }
 
-        $result = $this->newQuery()->findOne([$this->primaryKey => $this->attributes[$this->primaryKey]]);
+        // withTrashed(): refresh reloads this row by its own PK, so it must find
+        // the row even when trashed — otherwise a hydrated soft-deleted model
+        // reports exists() === false and the next save() re-INSERTs a duplicate.
+        $result = $this->newQuery()->withTrashed()->findOne([$this->primaryKey => $this->attributes[$this->primaryKey]]);
 
         if (!$result) {
             $this->_isExists = false;
@@ -272,9 +303,23 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->table;
     }
 
+    /** Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix). */
     public function getPrefix()
     {
         return $this->prefix === '' ? Connection::getPrefix() : $this->prefix;
+    }
+
+    /**
+     * Full prefix prepended to this model's table: wp_ plus the plugin prefix.
+     * Mirrors the table built in the constructor so joins and pivot tables
+     * resolve to the same physical table the model itself targets. Unlike
+     * getPrefix(), this never drops wp_ for custom-$prefix models.
+     *
+     * @return string
+     */
+    public function getTablePrefix()
+    {
+        return $this->prefix === '' ? Connection::getPrefix() : Connection::wpPrefix() . $this->prefix;
     }
 
     public function getTableWithoutPrefix()
@@ -345,7 +390,33 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     public function getDirtyAttributes()
     {
-        return $this->dirty;
+        if (!\is_array($this->dirty)) {
+            return $this->dirty;
+        }
+
+        return array_filter($this->dirty, function ($value) {
+            return !$this->isRelationValue($value);
+        });
+    }
+
+    /**
+     * True when a value is a loaded relation (a Collection, a related Model, or
+     * a list whose first element is one) rather than a persistable column value.
+     * A plain JSON array of scalars is NOT a relation and is still written.
+     *
+     * @param mixed $value
+     *
+     * @return bool
+     */
+    public function isRelationValue($value)
+    {
+        if ($value instanceof Collection || $value instanceof Model) {
+            return true;
+        }
+
+        return \is_array($value)
+            && isset($value[0])
+            && ($value[0] instanceof Model || $value[0] instanceof Collection);
     }
 
     public function getOriginal()
@@ -359,26 +430,34 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return false;
         }
 
+        if (\count($result) === 0) {
+            return [];
+        }
+
         $this->retrieveRelateData($this->getQueryBuilder());
         if (\count($result) == 1 && $setAttribute) {
             $this->fill((array) $result[0], true);
             $this->setExists(true);
             $this->setRelatedData($this);
             $this->setExists(true);
+            $this->fireEvent('retrieved');
 
             return $this;
         }
 
-        return array_map(
-            function ($row) {
-                $model = clone $this;
-                $model->fill((array) $row, true);
-                $this->setRelatedData($model);
-                $model->setExists(true);
+        return new Collection(
+            array_map(
+                function ($row) {
+                    $model = clone $this;
+                    $model->fill((array) $row, true);
+                    $this->setRelatedData($model);
+                    $model->setExists(true);
+                    $this->fireEvent('retrieved', $model);
 
-                return $model;
-            },
-            $result
+                    return $model;
+                },
+                $result
+            )
         );
     }
 
@@ -390,6 +469,16 @@ abstract class Model implements ArrayAccess, JsonSerializable
     public function newQuery()
     {
         return new QueryBuilder($this);
+    }
+
+    /**
+     * Canonical, IDE-navigable entry point to the query builder.
+     *
+     * @return QueryBuilder
+     */
+    public static function query()
+    {
+        return (new static())->newQuery();
     }
 
     #[ReturnTypeWillChange]
@@ -419,11 +508,59 @@ abstract class Model implements ArrayAccess, JsonSerializable
     #[ReturnTypeWillChange]
     public function jsonSerialize()
     {
+        return $this->toArray();
+    }
+
+    public function toArray()
+    {
         if (!$this->exists()) {
             return [];
         }
 
         return $this->attributes;
+    }
+
+    public function withCast(array $casts)
+    {
+        if (!isset($this->casts)) {
+            $this->casts = [];
+        }
+
+        $this->casts = array_merge($this->casts, $casts);
+
+        return $this;
+    }
+
+    /**
+     * Check if the model needs to be booted and if so, do it.
+     *
+     * @return void
+     */
+    protected function bootIfNotBooted()
+    {
+        if (! isset(static::$booted[static::class])) {
+            static::$booted[static::class] = true;
+
+            $this->fireEvent('booting');
+
+            static::booting();
+            static::boot();
+            static::booted();
+
+            $this->fireEvent('booted');
+        }
+    }
+
+    protected static function booting()
+    {
+    }
+
+    protected static function boot()
+    {
+    }
+
+    protected static function booted()
+    {
     }
 
     private static function getInstance()
@@ -441,15 +578,37 @@ abstract class Model implements ArrayAccess, JsonSerializable
             return $value;
         }
 
-        if (
-            !isset($this->casts)
-            || (isset($this->casts) && !isset($this->casts[$column]))
-            || !method_exists($this, 'castTo' . ucfirst($this->casts[$column]))
-        ) {
+        if (!isset($this->casts) || !isset($this->casts[$column])) {
             return $value;
         }
 
-        return \call_user_func([$this, 'castTo' . ucfirst($this->casts[$column])], $value);
+        $caster = $this->resolveCastMethod($this->casts[$column]);
+        if (!method_exists($this, $caster)) {
+            return $value;
+        }
+
+        return \call_user_func([$this, $caster], $value);
+    }
+
+    /**
+     * Resolves a cast name to its caster method, mapping the documented aliases
+     * (integer/float/double/json/datetime) onto the existing casters.
+     *
+     * @param string $cast
+     *
+     * @return string
+     */
+    private function resolveCastMethod($cast)
+    {
+        $aliases = [
+            'integer'  => 'castToInt',
+            'float'    => 'castToFloat',
+            'double'   => 'castToFloat',
+            'json'     => 'castToArray',
+            'datetime' => 'castToDate',
+        ];
+
+        return isset($aliases[$cast]) ? $aliases[$cast] : 'castTo' . ucfirst($cast);
     }
 
     private function castToObject($value)
@@ -475,9 +634,24 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return (int) $value;
     }
 
+    private function castToFloat($value)
+    {
+        return (float) $value;
+    }
+
     private function castToString($value)
     {
         return (string) $value;
+    }
+
+    private function castToBool($value)
+    {
+        return \boolval($value);
+    }
+
+    private function castToBoolean($value)
+    {
+        return $this->castToBool($value);
     }
 
     private function castToDate($value)
@@ -487,7 +661,18 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     private function processRelatedAttribute(QueryBuilder $attribute)
     {
-        $relation    = $attribute->getModel()->getRelateAs();
+        $relation = $attribute->getModel()->getRelateAs();
+
+        if ($relation === self::RELATE_AS_PIVOT) {
+            [$pivot, $pivotRef] = $this->applyPivotSelectAndJoin($attribute);
+            $attribute->where(
+                $pivotRef . '.' . $pivot['foreignPivotKey'],
+                $this->getAttribute($pivot['parentKey'])
+            );
+
+            return $attribute->get();
+        }
+
         $relationKey = $attribute->getModel()->getRelationalKeys()[$relation];
         $attribute->where($relationKey['foreignKey'], $this->getAttribute($relationKey['localKey']));
         if ($relation == 'oneToOne') {
