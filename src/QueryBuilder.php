@@ -1287,12 +1287,6 @@ class QueryBuilder
             return false;
         }
 
-        // Set the PK from the auto-increment id when there is one; a table with a
-        // manual/composite key returns insert_id 0 yet the insert still succeeded.
-        if ($insertId = $this->lastInsertId()) {
-            $this->_model->setAttribute($pk, $insertId);
-        }
-
         $this->_model->fireEvent('saved');
 
         return $this->_model;
@@ -2176,6 +2170,14 @@ class QueryBuilder
         if (!empty(Connection::prop('last_error'))) {
             return false;
         }
+
+        // Sync the auto-increment id onto the model before `created` fires, so the
+        // event handler sees the new PK (Eloquent parity). A manual/composite key
+        // returns insert_id 0, so the original key is left untouched.
+        if ($this->_method === self::INSERT && ($insertId = $this->lastInsertId())) {
+            $this->_model->setAttribute($this->_model->getPrimaryKey(), $insertId);
+        }
+
         $this->dispatchEvent('post');
 
         return $this->_method === self::SELECT ? Connection::prop('last_result') : $result;
