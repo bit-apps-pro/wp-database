@@ -18,6 +18,10 @@ class SavedEventUser extends Model
 
     public static $updatedCount = 0;
 
+    public static $createdSeenId = 'UNSET';
+
+    public static $savedSeenId = 'UNSET';
+
     protected $table = 'saved_event_users';
 
     protected $primaryKey = 'id';
@@ -26,18 +30,22 @@ class SavedEventUser extends Model
 
     public static function resetCounters()
     {
-        static::$savedCount   = 0;
-        static::$createdCount = 0;
-        static::$updatedCount = 0;
+        static::$savedCount    = 0;
+        static::$createdCount  = 0;
+        static::$updatedCount  = 0;
+        static::$createdSeenId = 'UNSET';
+        static::$savedSeenId   = 'UNSET';
     }
 
     protected static function boot()
     {
         static::saved(function ($model) {
             static::$savedCount++;
+            static::$savedSeenId = $model->id;
         });
         static::created(function ($model) {
             static::$createdCount++;
+            static::$createdSeenId = $model->id;
         });
         static::updated(function ($model) {
             static::$updatedCount++;
