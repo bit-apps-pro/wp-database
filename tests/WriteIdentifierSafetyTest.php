@@ -2,6 +2,8 @@
 
 namespace BitApps\WPDatabase\Tests;
 
+use BitApps\WPDatabase\Collection;
+use BitApps\WPDatabase\Tests\Fixtures\CreatingUser;
 use BitApps\WPDatabase\Tests\Fixtures\TimestampedRow;
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use FakeWpdb;
@@ -88,6 +90,24 @@ final class WriteIdentifierSafetyTest extends TestCase
         $user->setExists(false);
 
         $this->assertFalse($user->save());
+        $this->assertSame([], $GLOBALS['wpdb']->queries);
+    }
+
+    public function testUpdateWithOnlyRejectedFillableAttributesReturnsFalseWithoutQuery(): void
+    {
+        $query = CreatingUser::query();
+        $query->getModel()->setExists(false);
+
+        $this->assertFalse($query->update(['email' => 'ada@example.test']));
+        $this->assertSame([], $GLOBALS['wpdb']->queries);
+    }
+
+    public function testTimestampedBulkInsertWithOnlyEmptyRowsReturnsEmptyCollectionWithoutQuery(): void
+    {
+        $result = TimestampedRow::query()->insert([[], []]);
+
+        $this->assertInstanceOf(Collection::class, $result);
+        $this->assertCount(0, $result);
         $this->assertSame([], $GLOBALS['wpdb']->queries);
     }
 

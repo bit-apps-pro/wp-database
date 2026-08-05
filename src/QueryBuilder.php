@@ -1464,6 +1464,9 @@ class QueryBuilder
         }
 
         $this->update = $this->prepareAttributeForSaveOrUpdate(true);
+        if (empty($this->update)) {
+            return false;
+        }
 
         return $this->exec();
     }
@@ -2349,6 +2352,11 @@ class QueryBuilder
      */
     private function bulkInsert($attributes)
     {
+        [$callerColumns] = $this->normalizeWriteRows($attributes);
+        if (empty($callerColumns)) {
+            return new Collection([]);
+        }
+
         [$columns, $rows] = $this->normalizeWriteRows(
             $attributes,
             property_exists($this->_model, 'timestamps') && $this->_model->timestamps ? ['created_at'] : []
