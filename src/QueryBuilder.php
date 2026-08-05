@@ -2,11 +2,15 @@
 
 namespace BitApps\WPDatabase;
 
+use BitApps\WPDatabase\Query\Identifier;
+use BitApps\WPDatabase\Query\JoinType;
+use BitApps\WPDatabase\Query\RawTemplate;
+use BitApps\WPDatabase\Query\SqlOperator;
 use Closure;
-
 use DateTime;
 use DateTimeZone;
 use Exception;
+use RuntimeException;
 
 class QueryBuilder
 {
@@ -43,6 +47,8 @@ class QueryBuilder
     protected $bindings = [];
 
     protected $select = [];
+
+    protected $selectRaw = [];
 
     protected $insert = [];
 
@@ -92,6 +98,10 @@ class QueryBuilder
      */
     public function from($_from)
     {
+        if (!\is_string($_from)) {
+            throw new RuntimeException('Invalid SQL table alias.');
+        }
+        Identifier::assertSimple($_from);
         $this->_from = $_from;
 
         return $this;
@@ -183,6 +193,51 @@ class QueryBuilder
     public function select($columns = ['*'])
     {
         $this->select = !\is_array($columns) ? \func_get_args() : $columns;
+
+        foreach ($this->select as $column) {
+            $this->assertSafeIdentifier($column, true, true);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Adds structured columns without replacing the current projection.
+     *
+     * @param mixed $columns
+     *
+     * @return $this
+     */
+    public function addSelect($columns)
+    {
+        $columns = !\is_array($columns) ? \func_get_args() : $columns;
+        foreach ($columns as $column) {
+            $this->assertSafeIdentifier($column, true, true);
+            $this->select[] = $column;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Adds a reviewed, developer-authored raw projection.
+     *
+     * @param mixed $column
+     * @param mixed $bindings
+     *
+     * @return $this
+     */
+    public function selectRaw($column, $bindings = [])
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid raw select expression.');
+        }
+
+        $this->selectRaw['columns'][] = $column;
+        $this->selectRaw['bindings']  = array_merge(
+            isset($this->selectRaw['bindings']) ? $this->selectRaw['bindings'] : [],
+            \is_array($bindings) ? $bindings : [$bindings]
+        );
 
         return $this;
     }
@@ -282,14 +337,24 @@ class QueryBuilder
             return $sql;
         }
 
-        if (isset($clause['operator'])) {
-            $sql .= ' ' . $clause['operator'];
+        if (isset($clause['range'])) {
+            $sql .= ' ' . SqlOperator::normalizeRange('BETWEEN');
+        } elseif (isset($clause['operator'])) {
+            if (isset($clause['secondColumn'])) {
+                $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
+            } elseif (\is_array(isset($clause['value']) ? $clause['value'] : null)) {
+                $sql .= ' ' . SqlOperator::normalizeList($clause['operator']);
+            } elseif (!\array_key_exists('value', $clause) || \is_null($clause['value'])) {
+                $sql .= ' ' . SqlOperator::normalizeUnary($clause['operator']);
+            } else {
+                $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
+            }
         } elseif (\is_array($clause['value'])) {
-            $sql .= ' IN ';
+            $sql .= ' ' . SqlOperator::normalizeList('IN');
         } elseif (\is_null($clause['value'])) {
-            $sql = ' IS NULL';
+            $sql = ' ' . SqlOperator::normalizeUnary('IS NULL');
         } else {
-            $sql .= ' = ';
+            $sql .= ' ' . SqlOperator::normalizeBinary('=');
         }
 
         return $sql;
@@ -333,6 +398,9 @@ class QueryBuilder
      */
     public function whereRaw($sql, $bindings = [])
     {
+        if (!\is_string($sql)) {
+            throw new RuntimeException('Invalid raw where expression.');
+        }
         $this->where[] = [
             'raw'      => $sql,
             'bindings' => $bindings,
@@ -351,6 +419,9 @@ class QueryBuilder
      */
     public function orWhereRaw($sql, $bindings = [])
     {
+        if (!\is_string($sql)) {
+            throw new RuntimeException('Invalid raw where expression.');
+        }
         $this->where[] = [
             'raw'      => $sql,
             'bindings' => $bindings,
@@ -370,6 +441,8 @@ class QueryBuilder
      */
     public function whereIn($column, $value)
     {
+        $this->assertSafeIdentifier($column);
+        SqlOperator::normalizeList('IN');
         $this->where[] = [
             'column'   => $column,
             'value'    => $value,
@@ -388,6 +461,8 @@ class QueryBuilder
      */
     public function whereNull($column)
     {
+        $this->assertSafeIdentifier($column);
+        SqlOperator::normalizeUnary('IS NULL');
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NULL',
@@ -405,6 +480,8 @@ class QueryBuilder
      */
     public function whereNotNull($column)
     {
+        $this->assertSafeIdentifier($column);
+        SqlOperator::normalizeUnary('IS NOT NULL');
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NOT NULL',
@@ -424,10 +501,11 @@ class QueryBuilder
      */
     public function whereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
+            'column' => $column,
+            'range'  => true,
+            'value'  => [$start, $end],
         ];
 
         return $this;
@@ -444,11 +522,12 @@ class QueryBuilder
      */
     public function orWhereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
-            'bool'     => 'OR',
+            'column' => $column,
+            'range'  => true,
+            'value'  => [$start, $end],
+            'bool'   => 'OR',
         ];
 
         return $this;
@@ -466,11 +545,11 @@ class QueryBuilder
     {
         $selectedColumns = empty($this->select) ? ['*'] : $this->select;
 
-        $totalItems = (int) $this->count(); 
+        $totalItems = (int) $this->count();
 
         $offset = ($pageNo > 1) ? ($pageNo * $perPage) - $perPage : 0;
-                
-        $data =  $this->take($perPage)->skip($offset)->get($selectedColumns);
+
+        $data = $this->take($perPage)->skip($offset)->get($selectedColumns);
 
         $pages = ceil($totalItems / $perPage);
 
@@ -494,7 +573,10 @@ class QueryBuilder
      */
     public function groupBy($columns)
     {
-        $columns       = \is_array($columns) ? $columns : \func_get_args();
+        $columns = \is_array($columns) ? $columns : \func_get_args();
+        foreach ($columns as $column) {
+            $this->assertSafeIdentifier($column);
+        }
         $this->groupBy = array_merge($this->groupBy, $columns);
 
         return $this;
@@ -537,20 +619,47 @@ class QueryBuilder
      */
     public function join($table, $firstColumn, $operator = null, $secondColumn = null, $type = 'INNER')
     {
-        $table    = Connection::wpPrefix() . $this->_model->getPrefix() . $table;
-        $hasAlias = preg_split('/ as /i', $table);
-        if ($hasAlias && isset($hasAlias[1])) {
-            $table = $hasAlias[0];
-            $alias = $hasAlias[1];
-        } else {
-            $alias = $table;
-        }
+        [$rawTable, $userAlias, $physicalTable, $reference] = $this->parseJoinTable($table);
+        $on[]                                               = $this->prepareOn($reference, $firstColumn, $operator, $secondColumn, 'AND');
+        $this->joins[]                                      = [
+            'table'     => $physicalTable,
+            'raw'       => $rawTable,
+            'userAlias' => $userAlias,
+            'alias'     => $reference,
+            'on'        => $on,
+            'type'      => JoinType::normalize($type),
+        ];
 
-        $on[]          = $this->prepareOn($alias, $firstColumn, $operator, $secondColumn, 'AND');
+        return $this;
+    }
+
+    /**
+     * Joins a table using a bound scalar value as the right-hand operand.
+     *
+     * @param mixed $table
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $type
+     *
+     * @return $this
+     */
+    public function joinWhere($table, $firstColumn, $operator, $value, $type = 'INNER')
+    {
+        [$rawTable, $userAlias, $physicalTable, $reference] = $this->parseJoinTable($table);
+        $this->assertSafeIdentifier($firstColumn);
         $this->joins[] = [
-            'table' => $table,
-            'on'    => $on,
-            'type'  => $type,
+            'table'     => $physicalTable,
+            'raw'       => $rawTable,
+            'userAlias' => $userAlias,
+            'alias'     => $reference,
+            'on'        => [[
+                'column'   => $firstColumn,
+                'operator' => SqlOperator::normalizeBinary($operator),
+                'value'    => $value,
+                'bool'     => 'AND',
+            ]],
+            'type' => JoinType::normalize($type),
         ];
 
         return $this;
@@ -633,7 +742,11 @@ class QueryBuilder
             $joinIndex = 0;
         }
 
-        $table                           = $this->joins[$joinIndex]['table'];
+        if (!isset($this->joins[$joinIndex])) {
+            throw new RuntimeException('Cannot add an ON clause before a JOIN.');
+        }
+
+        $table                           = $this->joins[$joinIndex]['alias'];
         $this->joins[$joinIndex]['on'][] = $this->prepareOn($table, $firstColumn, $operator, $secondColumn, $bool);
 
         return $this;
@@ -654,6 +767,69 @@ class QueryBuilder
     }
 
     /**
+     * Adds an ON condition with a bound right-hand value.
+     *
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
+     * @return $this
+     */
+    public function onValue($firstColumn, $operator, $value, $bool = 'AND')
+    {
+        $joinIndex = \count($this->joins) - 1;
+        if ($joinIndex < 0) {
+            throw new RuntimeException('Cannot add an ON clause before a JOIN.');
+        }
+
+        $this->assertSafeIdentifier($firstColumn);
+        $this->joins[$joinIndex]['on'][] = [
+            'column'   => $firstColumn,
+            'operator' => SqlOperator::normalizeBinary($operator),
+            'value'    => $value,
+            'bool'     => $this->normalizeBoolean($bool),
+        ];
+
+        return $this;
+    }
+
+    public function orOnValue($firstColumn, $operator, $value)
+    {
+        return $this->onValue($firstColumn, $operator, $value, 'OR');
+    }
+
+    /**
+     * Adds a reviewed, developer-authored raw ON clause.
+     *
+     * @param mixed $sql
+     * @param mixed $bindings
+     * @param mixed $bool
+     *
+     * @return $this
+     */
+    public function onRaw($sql, $bindings = [], $bool = 'AND')
+    {
+        $joinIndex = \count($this->joins) - 1;
+        if ($joinIndex < 0 || !\is_string($sql)) {
+            throw new RuntimeException('Invalid raw ON clause.');
+        }
+
+        $this->joins[$joinIndex]['on'][] = [
+            'raw'      => $sql,
+            'bindings' => \is_array($bindings) ? $bindings : [$bindings],
+            'bool'     => $this->normalizeBoolean($bool),
+        ];
+
+        return $this;
+    }
+
+    public function orOnRaw($sql, $bindings = [])
+    {
+        return $this->onRaw($sql, $bindings, 'OR');
+    }
+
+    /**
      * Returns order by clause sql
      *
      * @return string
@@ -666,7 +842,7 @@ class QueryBuilder
         }
 
         foreach ($this->orderBy as $order) {
-            $sql .= $order['column'] . ' ' . $order['direction'] . ', ';
+            $sql .= $this->renderIdentifier($order['column']) . ' ' . $order['direction'] . ', ';
         }
 
         return ' ORDER BY ' . rtrim($sql, ', ');
@@ -681,6 +857,7 @@ class QueryBuilder
      */
     public function orderBy($column)
     {
+        $this->assertSafeIdentifier($column);
         $this->orderBy[] = [
             'column'    => $column,
             'direction' => 'ASC',
@@ -739,7 +916,56 @@ class QueryBuilder
      */
     public function raw($sql, $bindings = [])
     {
-        return $this->exec(Connection::prepare($sql, $bindings));
+        return $this->unsafeRaw($sql, $bindings);
+    }
+
+    /**
+     * Executes fully developer-controlled legacy SQL.
+     *
+     * @param mixed $sql
+     * @param mixed $bindings
+     *
+     * @return mixed
+     */
+    public function unsafeRaw($sql, $bindings = [])
+    {
+        if (!\is_string($sql)) {
+            throw new RuntimeException('Invalid raw SQL.');
+        }
+
+        if (!empty($bindings)) {
+            $sql = Connection::prepare($sql, $bindings);
+            if (!\is_string($sql) || $sql === '') {
+                throw new RuntimeException('Raw SQL preparation failed.');
+            }
+        }
+
+        return $this->exec($sql);
+    }
+
+    /**
+     * Executes a constrained typed SQL template.
+     *
+     * @return mixed
+     */
+    public function rawPrepared(
+        string $template,
+        array $bindings = [],
+        array $identifiers = [],
+        array $directions = []
+    ) {
+        $sql = RawTemplate::compile($template, $bindings, $identifiers, $directions);
+
+        if (!empty($bindings)) {
+            $sql = Connection::prepare($sql, $bindings);
+            if (!\is_string($sql) || $sql === '') {
+                throw new RuntimeException('Raw SQL preparation failed.');
+            }
+        } else {
+            $sql = str_replace('%%', '%', $sql);
+        }
+
+        return $this->exec($sql);
     }
 
     /**
@@ -751,7 +977,7 @@ class QueryBuilder
      */
     public function take($count)
     {
-        $this->limit = $count;
+        $this->limit = $this->normalizeUnsignedInteger($count, 'LIMIT');
 
         return $this;
     }
@@ -765,7 +991,7 @@ class QueryBuilder
      */
     public function skip($count)
     {
-        $this->offset = $count;
+        $this->offset = $this->normalizeUnsignedInteger($count, 'OFFSET');
 
         return $this;
     }
@@ -793,6 +1019,11 @@ class QueryBuilder
             return $this->bulkInsert($attributes);
         }
 
+        if (!\is_array($attributes)) {
+            throw new RuntimeException('Invalid write row.');
+        }
+        $this->normalizeWriteColumns(array_keys($attributes));
+
         $this->_model->fill($attributes);
         if ($this->save()) {
             return $this->_model;
@@ -810,6 +1041,10 @@ class QueryBuilder
      */
     public function update($attributes = [])
     {
+        if (!\is_array($attributes)) {
+            throw new RuntimeException('Invalid write row.');
+        }
+        $this->normalizeWriteColumns(array_keys($attributes));
         $this->_method = self::UPDATE;
         $this->_model->fill($attributes);
         $this->update = $this->prepareAttributeForSaveOrUpdate(true);
@@ -839,6 +1074,7 @@ class QueryBuilder
      */
     public function save()
     {
+        $this->normalizeWriteColumns(array_keys($this->_model->getAttributes()));
         $columns = $this->prepareAttributeForSaveOrUpdate($this->_model->exists());
         $pk      = $this->_model->getPrimaryKey();
         if ($this->_model->exists()) {
@@ -880,7 +1116,7 @@ class QueryBuilder
      */
     public function withCount()
     {
-        $this->select[] = 'COUNT(*) as count';
+        $this->selectRaw('COUNT(*) as count');
 
         return $this;
     }
@@ -892,30 +1128,38 @@ class QueryBuilder
      */
     public function count()
     {
-        $this->select  = ['COUNT(*) as count'];
-        $this->_method = 'Select';
-        $result        = $this->exec();
-        unset($this->select);
+        $this->select    = [];
+        $this->selectRaw = ['columns' => ['COUNT(*) as count'], 'bindings' => []];
+        $this->_method   = 'Select';
+        $result          = $this->exec();
+        $this->select    = [];
+        $this->selectRaw = [];
 
         return \is_array($result) && !empty($result[0]->count) ? $result[0]->count : null;
     }
 
     public function max($column)
     {
-        $this->select  = ['MAX(' . $column . ') as max'];
-        $this->_method = 'Select';
-        $result        = $this->exec();
-        unset($this->select);
+        $this->assertSafeIdentifier($column);
+        $this->select    = [];
+        $this->selectRaw = ['columns' => ['MAX(' . $this->renderIdentifier($column) . ') as max'], 'bindings' => []];
+        $this->_method   = 'Select';
+        $result          = $this->exec();
+        $this->select    = [];
+        $this->selectRaw = [];
 
         return \is_array($result) && !empty($result[0]->max) ? $result[0]->max : null;
     }
 
     public function min($column)
     {
-        $this->select  = ['MIN(' . $column . ') as min'];
-        $this->_method = 'Select';
-        $result        = $this->exec();
-        unset($this->select);
+        $this->assertSafeIdentifier($column);
+        $this->select    = [];
+        $this->selectRaw = ['columns' => ['MIN(' . $this->renderIdentifier($column) . ') as min'], 'bindings' => []];
+        $this->_method   = 'Select';
+        $result          = $this->exec();
+        $this->select    = [];
+        $this->selectRaw = [];
 
         return \is_array($result) && !empty($result[0]->min) ? $result[0]->min : null;
     }
@@ -991,10 +1235,61 @@ class QueryBuilder
             $sql = $this->{'prepare' . $this->_method}();
         }
 
-        return empty($this->bindings)
-         || strpos($sql, '%') === false
-         ? $sql : Connection::prepare($sql, $this->bindings);
+        if (empty($this->bindings) || strpos($sql, '%') === false) {
+            return $sql;
+        }
 
+        $prepared = Connection::prepare($sql, $this->bindings);
+        if (!\is_string($prepared) || $prepared === '') {
+            throw new RuntimeException('SQL preparation failed.');
+        }
+
+        return $prepared;
+    }
+
+    /**
+     * Renders a logical identifier in the current model/join/alias context.
+     *
+     * @param mixed $column
+     * @param mixed $allowWildcard
+     * @param mixed $allowAlias
+     */
+    public function renderIdentifier($column, $allowWildcard = false, $allowAlias = false)
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        $alias = null;
+        if (preg_match('/^(.+?)\s+AS\s+(.+)$/i', $column, $matches)) {
+            if (!$allowAlias) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+            $column = $matches[1];
+            $alias  = $matches[2];
+            Identifier::assertSimple($alias);
+        }
+
+        $segments = explode('.', $column);
+        if (\count($segments) > 2) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        if (\count($segments) === 1) {
+            Identifier::quoteQualified($column, $allowWildcard);
+            $qualifier = isset($this->_from) ? $this->_from : $this->table;
+            $rendered  = Identifier::quoteQualified($qualifier . '.' . $column, $allowWildcard);
+        } else {
+            Identifier::quoteQualified($column, $allowWildcard);
+            $qualifier = $this->resolveQualifier($segments[0]);
+            $rendered  = Identifier::quoteQualified($qualifier . '.' . $segments[1], $allowWildcard);
+        }
+
+        if ($alias !== null) {
+            $rendered .= ' AS ' . Identifier::quoteAlias($alias);
+        }
+
+        return $rendered;
     }
 
     /**
@@ -1011,7 +1306,7 @@ class QueryBuilder
         if (\is_array($conditions) && \count($conditions) > 0) {
             foreach ($conditions as $clause) {
                 if (isset($clause['bool'])) {
-                    $sql .= ' ' . $clause['bool'];
+                    $sql .= ' ' . $this->normalizeBoolean($clause['bool']);
                 } else {
                     $sql .= ' AND';
                 }
@@ -1026,6 +1321,13 @@ class QueryBuilder
                 if (isset($clause['query']) && !\is_null($type)) {
                     $sql .= ' (' . $clause['query']->getConditions($clause['query'], $type) . ')';
                     $this->addBindings($clause['query']->getBindings());
+
+                    continue;
+                }
+
+                if (isset($clause['value']) && \is_array($clause['value']) && empty($clause['value'])) {
+                    $operator = SqlOperator::normalizeList(isset($clause['operator']) ? $clause['operator'] : 'IN');
+                    $sql .= $operator === 'NOT IN' ? ' 1 = 1' : ' 0 = 1';
 
                     continue;
                 }
@@ -1068,26 +1370,44 @@ class QueryBuilder
             return;
         }
 
-        $conditions['bool'] = $bool;
+        $conditions['bool'] = $this->normalizeBoolean($bool);
         if ($params[0] instanceof Closure) {
-            $nestedQuery = $this->newQuery()->queryFor($type);
+            $nestedQuery        = $this->newQuery()->queryFor($type);
+            $nestedQuery->joins = $this->joins;
+            $nestedQuery->_from = $this->_from;
             \call_user_func($params[0], $nestedQuery);
             $conditions['query'] = $nestedQuery;
             if (isset($params[1])) {
-                $conditions['bool'] = $params[1];
+                $conditions['bool'] = $this->normalizeBoolean($params[1]);
             }
         } elseif ($noOfParams == 2) {
             $conditions['column'] = $params[0];
             $conditions['value']  = $params[1];
         } elseif ($noOfParams == 3) {
-            $conditions['column']   = $params[0];
-            $conditions['operator'] = $params[1];
-            $conditions['value']    = $params[2];
+            $conditions['column'] = $params[0];
+            $conditions['value']  = $params[2];
+            if (\is_array($params[2])) {
+                $conditions['operator'] = SqlOperator::normalizeList($params[1]);
+            } elseif (\is_null($params[2])) {
+                if ($params[1] === '=' || $params[1] === '==') {
+                    $conditions['operator'] = 'IS NULL';
+                } elseif ($params[1] === '!=' || $params[1] === '<>') {
+                    $conditions['operator'] = 'IS NOT NULL';
+                } else {
+                    $conditions['operator'] = SqlOperator::normalizeUnary($params[1]);
+                }
+            } else {
+                $conditions['operator'] = SqlOperator::normalizeBinary($params[1]);
+            }
         } elseif ($noOfParams == 4) {
             $conditions['column']                                     = $params[0];
-            $conditions['operator']                                   = $params[1];
+            $conditions['operator']                                   = SqlOperator::normalizeBinary($params[1]);
             $conditions[$type === 'where' ? 'value' : 'secondColumn'] = $params[2];
-            $conditions['bool']                                       = $params[3];
+            $conditions['bool']                                       = $this->normalizeBoolean($params[3]);
+        }
+
+        if (isset($conditions['column'])) {
+            $this->assertSafeIdentifier($conditions['column']);
         }
 
         return $conditions;
@@ -1102,7 +1422,7 @@ class QueryBuilder
      */
     protected function removeLeadingBool($sql)
     {
-        return preg_replace('/and |or /i', '', $sql, 1);
+        return ltrim(preg_replace('/and |or /i', '', $sql, 1));
     }
 
     /**
@@ -1147,7 +1467,9 @@ class QueryBuilder
             return '';
         }
 
-        return ' GROUP BY ' . implode(',', $this->groupBy);
+        return ' GROUP BY ' . implode(',', array_map(function ($column) {
+            return $this->renderIdentifier($column);
+        }, $this->groupBy));
     }
 
     /**
@@ -1196,7 +1518,11 @@ class QueryBuilder
         }
 
         foreach ($this->joins as $join) {
-            $sql .= ' ' . $join['type'] . ' JOIN ' . $join['table'] . ' ON ' . $this->processConditions($join['on']);
+            $sql .= ' ' . JoinType::normalize($join['type']) . ' JOIN ' . Identifier::quoteQualified($join['table']);
+            if ($join['userAlias'] !== null) {
+                $sql .= ' AS ' . Identifier::quoteAlias($join['userAlias']);
+            }
+            $sql .= ' ON ' . $this->processConditions($join['on']);
         }
 
         return $sql;
@@ -1217,10 +1543,17 @@ class QueryBuilder
     protected function prepareOn($table, $column, $operator, $secondColumn, $bool = 'AND')
     {
         if (\is_null($operator) && \is_null($secondColumn)) {
-            $column       = $this->_model->getTable() . '.' . $column;
-            $secondColumn = $table . '.' . $column;
+            Identifier::assertSimple($column);
+            $key          = $column;
+            $column       = $this->_model->getTableWithoutPrefix() . '.' . $key;
+            $secondColumn = $table . '.' . $key;
             $operator     = '=';
         }
+
+        $this->assertSafeIdentifier($column);
+        $this->assertSafeIdentifier($secondColumn);
+        $operator = SqlOperator::normalizeBinary($operator);
+        $bool     = $this->normalizeBoolean($bool);
 
         return compact('column', 'operator', 'secondColumn', 'bool');
     }
@@ -1263,7 +1596,7 @@ class QueryBuilder
             $absHour = abs($hours);
             $absMins = abs($minutes * 60);
 
-            $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
+            $timezoneString = \sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
         $dateTime = new DateTime('now', new DateTimeZone($timezoneString));
@@ -1280,38 +1613,61 @@ class QueryBuilder
      */
     private function bulkInsert($attributes)
     {
-        $firstRow = reset($attributes);
-        ksort($firstRow);
-        $columns   = array_keys($firstRow);
+        if (empty($attributes)) {
+            return false;
+        }
+
+        $columns = [];
+        foreach ($attributes as $row) {
+            if (!\is_array($row)) {
+                throw new RuntimeException('Invalid write row.');
+            }
+            foreach ($this->normalizeWriteColumns(array_keys($row)) as $column) {
+                if (!\in_array($column, $columns, true)) {
+                    $columns[] = $column;
+                }
+            }
+        }
+        if (empty($columns)) {
+            return false;
+        }
+
         $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
         if ($createdAt) {
-            $columns[] = 'created_at';
+            if (!\in_array('created_at', $columns, true)) {
+                $columns[] = 'created_at';
+            }
         }
 
         $this->bindings = [];
 
-        $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $columns) . ')';
+        $sql = 'INSERT INTO ' . Identifier::quoteQualified($this->table);
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
         $sql .= ' VALUES ';
         $values = [];
         foreach ($attributes as $row) {
-            ksort($row);
             if ($createdAt) {
-                $row['created_at'] = $this->currentTimestamp();
+                if (!\array_key_exists('created_at', $row)) {
+                    $row['created_at'] = $this->currentTimestamp();
+                }
             }
 
-            $rowValues = array_values($row);
-            $values[]  = ' ('
+            $rowValues = [];
+            foreach ($columns as $column) {
+                $rowValues[] = \array_key_exists($column, $row) ? $row[$column] : null;
+            }
+            $values[] = ' ('
                 . implode(
                     ', ',
                     array_map(
                         function ($value) {
-
                             if (\is_null($value)) {
                                 return 'NULL';
                             }
 
-
+                            if (\is_array($value) || \is_object($value)) {
+                                $value = wp_json_encode($value);
+                            }
                             $this->bindings[] = $value;
 
                             return $this->getValueType($value);
@@ -1355,7 +1711,7 @@ class QueryBuilder
      */
     private function getFrom()
     {
-        return isset($this->_from) ? " {$this->_from}" : null;
+        return isset($this->_from) ? ' AS ' . Identifier::quoteAlias($this->_from) : null;
     }
 
     /**
@@ -1368,7 +1724,7 @@ class QueryBuilder
     private function prepareColumnForWhere($clause)
     {
         if (isset($clause['column'])) {
-            return ' ' . $clause['column'];
+            return ' ' . $this->renderIdentifier($clause['column']);
         }
     }
 
@@ -1384,14 +1740,19 @@ class QueryBuilder
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
-            return ' ' . $clause['secondColumn'];
+            return ' ' . $this->renderIdentifier($clause['secondColumn']);
         }
 
         if (!isset($clause['value'])) {
             return $sql;
         }
 
-        if (\is_array($clause['value'])) {
+        if (isset($clause['range'])) {
+            $sql .= ' ' . $this->getValueType($clause['value'][0]);
+            $sql .= ' AND ' . $this->getValueType($clause['value'][1]);
+            $query->addBindings($clause['value'][0]);
+            $query->addBindings($clause['value'][1]);
+        } elseif (\is_array($clause['value'])) {
             $sql .= ' (';
             foreach ($clause['value'] as $value) {
                 $sql .= $this->getValueType($value) . ',';
@@ -1399,11 +1760,8 @@ class QueryBuilder
             }
 
             $sql = rtrim($sql, ',') . ')';
-        } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') !== false) {
-            $sql .= ' ' . $clause['value'];
-        } elseif (isset($clause['operator']) && strtoupper($clause['operator'] === 'LIKE')) {
-            $sql .= ' %s';
-            $query->addBindings($clause['value']);
+        } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') === 0) {
+            return $sql;
         } elseif (!\is_null($clause['value'])) {
             $sql .= ' ' . $query->getValueType($clause['value']);
             $query->addBindings($clause['value']);
@@ -1448,15 +1806,17 @@ class QueryBuilder
             $columnsToPrepare[] = 'updated_at';
         }
 
+        $columnsToPrepare = $this->normalizeWriteColumns($columnsToPrepare);
+
         $attributes = $this->_model->getAttributes();
         foreach ($columnsToPrepare as $key => $column) {
             if (isset($attributes[$column])) {
                 $this->bindings[] = \is_array($this->_model->{$column})
                 || \is_object($this->_model->{$column})
                 ? wp_json_encode($this->_model->{$column}) : $this->_model->{$column};
-            }  elseif (\is_null($this->_model->{$column})) {
+            } elseif (\is_null($this->_model->{$column})) {
                 $this->bindings[] = null;
-            }else {
+            } else {
                 $this->bindings[] = '';
             }
         }
@@ -1474,7 +1834,17 @@ class QueryBuilder
     private function prepareSelect()
     {
         $this->bindings = [];
-        $sql            = 'SELECT ' . implode(',', $this->select) . ' FROM ' . $this->table;
+        $columns        = array_map(function ($column) {
+            return $this->renderIdentifier($column, true, true);
+        }, $this->select);
+        $projection = implode(',', $columns);
+        if (!empty($this->selectRaw['columns'])) {
+            $projection .= $projection === '' ? '' : ', ';
+            $projection .= implode(', ', $this->selectRaw['columns']);
+            $this->addBindings(isset($this->selectRaw['bindings']) ? $this->selectRaw['bindings'] : []);
+        }
+
+        $sql = 'SELECT ' . $projection . ' FROM ' . Identifier::quoteQualified($this->table);
         $sql .= $this->getFrom();
         $sql .= $this->getJoin();
         $sql .= $this->getWhere($this);
@@ -1494,8 +1864,8 @@ class QueryBuilder
      */
     private function prepareInsert()
     {
-        $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $this->insert) . ')';
+        $sql = 'INSERT INTO ' . Identifier::quoteQualified($this->table);
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($this->insert)) . ')';
         $sql .= ' VALUES ('
             . implode(
                 ', ',
@@ -1524,18 +1894,21 @@ class QueryBuilder
      */
     private function prepareUpdate()
     {
-        $sql = 'UPDATE ' . $this->table;
+        $setBindings    = array_values($this->bindings);
+        $this->bindings = [];
+        $sql            = 'UPDATE ' . Identifier::quoteQualified($this->table);
         $sql .= $this->getJoin();
         $sql .= ' SET ';
-        $columnCount = \count($this->update);
+        $columnCount         = \count($this->update);
+        $preparedSetBindings = [];
         foreach ($this->update as $key => $column) {
             // $sql .= $column . ' = ' . $this->getValueType($this->bindings[$key]);
 
-            if (\is_null($this->bindings[$key])) {
-                $sql .= $column . ' = NULL';
-                unset($this->bindings[$key]);
+            if (\is_null($setBindings[$key])) {
+                $sql .= $this->compileWriteColumn($column) . ' = NULL';
             } else {
-                $sql .= $column . ' = ' . $this->getValueType($this->bindings[$key]);
+                $sql .= $this->compileWriteColumn($column) . ' = ' . $this->getValueType($setBindings[$key]);
+                $preparedSetBindings[] = $setBindings[$key];
             }
 
             if ($key < $columnCount - 1) {
@@ -1543,6 +1916,7 @@ class QueryBuilder
             }
         }
 
+        $this->bindings = array_merge($this->bindings, $preparedSetBindings);
         $sql .= $this->getWhere($this);
 
         return $sql;
@@ -1559,7 +1933,7 @@ class QueryBuilder
             return $this->update(['deleted_at' => $this->currentTimestamp()])->prepareUpdate();
         }
 
-        $sql = 'DELETE FROM ' . $this->table;
+        $sql = 'DELETE FROM ' . Identifier::quoteQualified($this->table);
         $sql .= $this->getWhere($this);
 
         return $sql;
@@ -1589,6 +1963,143 @@ class QueryBuilder
         }
 
         return Connection::prop('last_result');
+    }
+
+    private function assertSafeIdentifier($column, $allowWildcard = false, $allowAlias = false)
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        if (preg_match('/^(.+?)\s+AS\s+(.+)$/i', $column, $matches)) {
+            if (!$allowAlias) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+            Identifier::assertSimple($matches[2]);
+            $column = $matches[1];
+        }
+
+        Identifier::quoteQualified($column, $allowWildcard);
+        if (\count(explode('.', $column)) > 2) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+    }
+
+    private function resolveQualifier($qualifier)
+    {
+        Identifier::assertSimple($qualifier);
+
+        $baseReference = isset($this->_from) ? $this->_from : $this->table;
+        if ($qualifier    === $this->_model->getTableWithoutPrefix()
+            || $qualifier === $this->table
+            || (isset($this->_from) && $qualifier === $this->_from)
+        ) {
+            return $baseReference;
+        }
+
+        foreach ($this->joins as $join) {
+            if ($qualifier    === $join['raw']
+                || $qualifier === $join['table']
+                || ($join['userAlias'] !== null && $qualifier === $join['userAlias'])
+            ) {
+                return $join['alias'];
+            }
+        }
+
+        throw new RuntimeException('Unknown SQL identifier qualifier.');
+    }
+
+    /**
+     * @param mixed $table
+     *
+     * @return array{0: string, 1: null|string, 2: string, 3: string}
+     */
+    private function parseJoinTable($table)
+    {
+        if (!\is_string($table)
+            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
+        ) {
+            throw new RuntimeException('Invalid SQL join table declaration.');
+        }
+
+        $rawTable  = $matches[1];
+        $userAlias = isset($matches[2]) ? $matches[2] : null;
+        Identifier::assertSimple($rawTable);
+        if ($userAlias !== null) {
+            Identifier::assertSimple($userAlias);
+        }
+
+        $baseTable = $this->_model->getTable();
+        $baseName  = $this->_model->getTableWithoutPrefix();
+        $prefix    = substr($baseTable, 0, \strlen($baseTable) - \strlen($baseName));
+        $physical  = strpos($rawTable, $prefix) === 0 ? $rawTable : $prefix . $rawTable;
+        Identifier::assertSimple($physical);
+        $reference = $userAlias !== null ? $userAlias : $physical;
+
+        return [$rawTable, $userAlias, $physical, $reference];
+    }
+
+    private function normalizeBoolean($bool)
+    {
+        if (!\is_string($bool)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        $normalized = strtoupper($bool);
+        if (!\in_array($normalized, ['AND', 'OR'], true)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeUnsignedInteger($value, $context)
+    {
+        if (\is_int($value)) {
+            $normalized = $value;
+        } elseif (\is_string($value) && preg_match('/^[0-9]+$/', $value)) {
+            $normalized = (int) $value;
+        } else {
+            throw new RuntimeException('Invalid SQL ' . $context . ' value.');
+        }
+
+        if ($normalized < 0) {
+            throw new RuntimeException('Invalid SQL ' . $context . ' value.');
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeWriteColumns(array $columns)
+    {
+        $normalized = [];
+        foreach ($columns as $column) {
+            if (!\is_string($column)) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+            Identifier::assertSimple($column);
+            if (!\in_array($column, $normalized, true)) {
+                $normalized[] = $column;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function compileWriteColumns(array $columns)
+    {
+        return array_map(function ($column) {
+            return $this->compileWriteColumn($column);
+        }, $columns);
+    }
+
+    private function compileWriteColumn($column)
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        return Identifier::quoteQualified($column);
     }
 
     /**

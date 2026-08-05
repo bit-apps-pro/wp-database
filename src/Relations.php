@@ -6,6 +6,9 @@
 
 namespace BitApps\WPDatabase;
 
+use BitApps\WPDatabase\Query\Identifier;
+use RuntimeException;
+
 if (!\defined('ABSPATH')) {
     exit;
 }
@@ -41,6 +44,8 @@ trait Relations
 
     public function newBelongsTo($model, $foreignKey = null, $localKey = null)
     {
+        $this->assertRelationKey($foreignKey);
+        $this->assertRelationKey($localKey);
         $model = new $model();
         $model->setRelateAs('oneToOne');
         $model->_relationKeys['oneToOne'] = [
@@ -67,6 +72,8 @@ trait Relations
 
     public function newHasMany($model, $foreignKey = null, $localKey = null)
     {
+        $this->assertRelationKey($foreignKey);
+        $this->assertRelationKey($localKey);
         $model = new $model();
         $model->setRelateAs('hasMany');
         $model->_relationKeys['hasMany'] = [
@@ -88,6 +95,8 @@ trait Relations
 
     public function newBelongsToMany($model, $foreignKey = null, $localKey = null)
     {
+        $this->assertRelationKey($foreignKey);
+        $this->assertRelationKey($localKey);
         $model = new $model();
         $model->setRelateAs('belongsToMany');
         $model->_relationKeys['belongsToMany'] = [
@@ -110,6 +119,10 @@ trait Relations
 
     public function addRelation($relation)
     {
+        if (!\is_string($relation)) {
+            throw new RuntimeException('Invalid relation name.');
+        }
+        Identifier::assertSimple($relation);
         if (method_exists($this, $relation)) {
             $this->_relations[$relation] = $this->{$relation}();
 
@@ -132,7 +145,20 @@ trait Relations
             $localKey = $this->getPrimaryKey();
         }
 
+        $this->assertRelationKey($foreignKey);
+        $this->assertRelationKey($localKey);
+
         return [$foreignKey, $localKey];
+    }
+
+    private function assertRelationKey($key)
+    {
+        if ($key !== null) {
+            if (!\is_string($key)) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+            Identifier::assertSimple($key);
+        }
     }
 
     private function retrieveRelateData(QueryBuilder $query)
