@@ -1003,7 +1003,7 @@ class QueryBuilder
      */
     public function insert($attributes = [])
     {
-        if (\is_array(reset($attributes))) {
+        if ($this->isListOfRows($attributes)) {
             return $this->bulkInsert($attributes);
         }
 
@@ -2091,6 +2091,34 @@ class QueryBuilder
         }
 
         return $normalized;
+    }
+
+    /**
+     * True only when $attributes is a non-empty positional list whose every
+     * element is itself an array (a list of rows for bulk insert). An assoc row
+     * whose first value happens to be an array must take the single-row path.
+     *
+     * @param mixed $attributes
+     *
+     * @return bool
+     */
+    private function isListOfRows($attributes)
+    {
+        if (!\is_array($attributes) || $attributes === []) {
+            return false;
+        }
+
+        if (array_keys($attributes) !== range(0, \count($attributes) - 1)) {
+            return false;
+        }
+
+        foreach ($attributes as $row) {
+            if (!\is_array($row)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function normalizeWriteColumns(array $columns)

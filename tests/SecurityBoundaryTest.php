@@ -193,4 +193,66 @@ final class SecurityBoundaryTest extends TestCase
 
         $this->assertStringContainsString('(`name`)', $GLOBALS['wpdb']->last_query);
     }
+
+    public function testArrayValuedFirstFieldRemainsASingleInsertRow(): void
+    {
+        $GLOBALS['wpdb']->insert_id = 41;
+
+        $result = (new User())->newQuery()->insert([
+            'email' => ['primary' => 'ada@example.com'],
+            'name'  => 'Ada',
+        ]);
+
+        $this->assertInstanceOf(User::class, $result);
+        $this->assertSame(
+            'INSERT INTO `wp_users` (`email`, `name`) VALUES (\'{"primary":"ada@example.com"}\', \'Ada\')',
+            $GLOBALS['wpdb']->last_query
+        );
+    }
+
+    public function testPositionalArrayOfRowsRemainsABulkInsert(): void
+    {
+        $GLOBALS['wpdb']->insert_id     = 51;
+        $GLOBALS['wpdb']->rows_affected = 2;
+
+        $result = (new User())->newQuery()->insert([
+            ['name' => 'Ada'],
+            ['name' => 'Grace'],
+        ]);
+
+        $this->assertSame([51, 52], $result);
+        $this->assertStringContainsString('INSERT INTO `wp_users` (`name`) VALUES', $GLOBALS['wpdb']->queries[0]);
+        $this->assertStringContainsString('(\'Ada\'), (\'Grace\')', $GLOBALS['wpdb']->queries[0]);
+    }
+
+    public function maliciousInsertShapeProvider(): array
+    {
+        return [
+            'single array-valued row' => [[
+                'email'              => ['primary' => 'ada@example.com'],
+                'name; DROP TABLE x' => 'Ada',
+            ]],
+            'bulk rows' => [[
+                ['name' => 'Ada'],
+                ['email; DROP TABLE x' => 'x'],
+            ]],
+        ];
+    }
+
+    /**
+     * @dataProvider maliciousInsertShapeProvider
+     */
+    public function testInsertShapesRejectMaliciousKeysBeforeExecution($attributes): void
+    {
+        $caught = null;
+
+        try {
+            (new User())->newQuery()->insert($attributes);
+        } catch (RuntimeException $exception) {
+            $caught = $exception;
+        }
+
+        $this->assertInstanceOf(RuntimeException::class, $caught);
+        $this->assertSame([], $GLOBALS['wpdb']->queries);
+    }
 }
