@@ -1435,6 +1435,7 @@ class QueryBuilder
             return $this->bulkInsert($attributes);
         }
 
+        $this->normalizeWriteColumns(array_keys($attributes));
         $this->_model->fill($attributes);
         if ($this->save()) {
             return $this->_model;
@@ -1452,6 +1453,11 @@ class QueryBuilder
      */
     public function update($attributes = [])
     {
+        if (empty($attributes)) {
+            return false;
+        }
+
+        $this->normalizeWriteColumns(array_keys($attributes));
         $this->_model->fill($attributes);
         if ($this->_model->exists()) {
             return $this->save();
@@ -1484,6 +1490,10 @@ class QueryBuilder
      */
     public function save()
     {
+        $this->normalizeWriteColumns(
+            $this->withoutRelationColumns(array_keys($this->_model->getAttributes()))
+        );
+
         if ($this->_model->fireEvent('saving') === false) {
             return false;
         }
@@ -1519,6 +1529,10 @@ class QueryBuilder
                 return $this->_model;
             }
 
+            return false;
+        }
+
+        if (empty($columns)) {
             return false;
         }
 
@@ -1743,79 +1757,57 @@ class QueryBuilder
 
     public function upsert(array $values, ?array $update = null)
     {
-        if (!\is_array(reset($values))) {
+        if (empty($values)) {
+            return false;
+        }
+
+        if (!$this->isListOfRows($values)) {
             $values = [$values];
         }
 
+        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
+        [$columns, $rows] = $this->normalizeWriteRows(
+            $values,
+            $manageTimestamps ? ['created_at', 'updated_at'] : []
+        );
+        if (empty($columns)) {
+            return false;
+        }
+
         if (empty($update)) {
-            $update = array_keys($values[0]);
+            $update = $columns;
+        }
+        $update = $this->normalizeWriteColumns($update);
+
+        if ($manageTimestamps) {
+            // Never overwrite the original creation time on update; always bump updated_at.
+            $update = array_values(array_diff($update, ['created_at']));
+            if (!\in_array('updated_at', $update, true)) {
+                $update[] = 'updated_at';
+            }
         }
 
         $this->bindings = [];
-        $columns        = array_keys($values[0]);
-        sort($columns);
-        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
-        $addCreatedAt     = $manageTimestamps                            && !\in_array('created_at', $columns, true);
-        $addUpdatedAt     = $manageTimestamps                            && !\in_array('updated_at', $columns, true);
-        if ($addCreatedAt) {
-            $columns[] = 'created_at';
-        }
-        if ($addUpdatedAt) {
-            $columns[] = 'updated_at';
-        }
-        $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $columns) . ')';
+        $sql            = 'INSERT INTO ' . $this->table;
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
 
         $sql .= ' VALUES ';
         $insertAbleValues = [];
-        foreach ($values as $row) {
-            ksort($row);
-            if ($addCreatedAt || $addUpdatedAt) {
-                $now = $this->currentTimestamp();
-                if ($addCreatedAt) {
-                    $row['created_at'] = $now;
-                }
-                if ($addUpdatedAt) {
-                    $row['updated_at'] = $now;
-                }
-            }
-
-            $rowValues          = array_values($row);
+        foreach ($rows as $row) {
             $insertAbleValues[] = ' ('
                 . implode(
                     ', ',
-                    array_map(
-                        function ($value) {
-                            if (\is_null($value)) {
-                                return 'NULL';
-                            }
-
-                            if (\is_array($value) || \is_object($value)) {
-                                $value = wp_json_encode($value);
-                            }
-
-                            $this->bindings[] = $value;
-
-                            return $this->getValueType($value);
-                        },
-                        $rowValues
-                    )
+                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
                 ) . ')';
         }
 
         $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
         $sql .= ' ON DUPLICATE KEY UPDATE ';
-        if ($manageTimestamps) {
-            // Never overwrite the original creation time on update; always bump updated_at.
-            $update = array_diff($update, ['created_at']);
-            if (!\in_array('updated_at', $update, true)) {
-                $update[] = 'updated_at';
-            }
-        }
-        $update = array_map(function ($column) {
+        $sql .= implode(', ', array_map(function ($column) {
+            $column = $this->compileWriteColumn($column);
+
             return $column . ' = VALUES(' . $column . ')';
-        }, $update);
-        $sql .= implode(', ', $update);
+        }, $update));
         $sql .= ';';
 
         return $this->raw($sql, $this->bindings);
@@ -2226,6 +2218,129 @@ class QueryBuilder
     }
 
     /**
+     * Validates logical write-column names while keeping them unquoted until
+     * compilation. Write schemas intentionally allow only simple identifiers:
+     * dot-qualified paths are meaningful in read clauses, not INSERT/UPDATE.
+     *
+     * @param array $columns
+     *
+     * @return array
+     */
+    private function normalizeWriteColumns(array $columns)
+    {
+        $normalized = [];
+
+        foreach ($columns as $column) {
+            if (!\is_string($column)) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+
+            Identifier::assertSimple($column);
+            if (!\in_array($column, $normalized, true)) {
+                $normalized[] = $column;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Builds the canonical, first-seen union schema for a set of write rows
+     * and aligns every row to it. Missing input remains SQL NULL rather than
+     * borrowing a value by position from another row.
+     *
+     * @param array $rows
+     * @param array $managedTimestampColumns
+     *
+     * @return array{0: array, 1: array}
+     */
+    private function normalizeWriteRows(array $rows, array $managedTimestampColumns = [])
+    {
+        $columns = [];
+        foreach ($rows as $row) {
+            if (!\is_array($row)) {
+                throw new RuntimeException('Invalid write row.');
+            }
+
+            foreach ($this->normalizeWriteColumns(array_keys($row)) as $column) {
+                if (!\in_array($column, $columns, true)) {
+                    $columns[] = $column;
+                }
+            }
+        }
+
+        $generatedTimestamps = [];
+        foreach ($managedTimestampColumns as $column) {
+            $this->normalizeWriteColumns([$column]);
+            if (!\in_array($column, $columns, true)) {
+                $columns[]                    = $column;
+                $generatedTimestamps[$column] = true;
+            }
+        }
+
+        $normalizedRows = [];
+        foreach ($rows as $row) {
+            $normalizedRow = [];
+            foreach ($columns as $column) {
+                if (\array_key_exists($column, $row)) {
+                    $normalizedRow[] = $row[$column];
+                } elseif (isset($generatedTimestamps[$column])) {
+                    $normalizedRow[] = $this->currentTimestamp();
+                } else {
+                    $normalizedRow[] = null;
+                }
+            }
+            $normalizedRows[] = $normalizedRow;
+        }
+
+        return [$columns, $normalizedRows];
+    }
+
+    /**
+     * @param array $columns
+     *
+     * @return array
+     */
+    private function compileWriteColumns(array $columns)
+    {
+        return array_map(fn ($column) => $this->compileWriteColumn($column), $columns);
+    }
+
+    /**
+     * @param mixed $column
+     *
+     * @return string
+     */
+    private function compileWriteColumn($column)
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        return Identifier::quoteQualified($column);
+    }
+
+    /**
+     * @param mixed $value
+     *
+     * @return string
+     */
+    private function compileWriteValue($value)
+    {
+        if (\is_null($value)) {
+            return 'NULL';
+        }
+
+        if (\is_array($value) || \is_object($value)) {
+            $value = wp_json_encode($value);
+        }
+
+        $this->bindings[] = $value;
+
+        return $this->getValueType($value);
+    }
+
+    /**
      * Run bulk insert query
      *
      * @param array $attributes
@@ -2234,55 +2349,25 @@ class QueryBuilder
      */
     private function bulkInsert($attributes)
     {
-        $firstRow = reset($attributes);
-        if (empty($firstRow)) {
+        [$columns, $rows] = $this->normalizeWriteRows(
+            $attributes,
+            property_exists($this->_model, 'timestamps') && $this->_model->timestamps ? ['created_at'] : []
+        );
+        if (empty($columns)) {
             return new Collection([]);
-        }
-
-        ksort($firstRow);
-        $columns   = array_keys($firstRow);
-        $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
-        if ($createdAt) {
-            $columns[] = 'created_at';
         }
 
         $this->bindings = [];
 
         $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $columns) . ')';
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
         $sql .= ' VALUES ';
         $values = [];
-        foreach ($attributes as $row) {
-            if ($createdAt) {
-                $row['created_at'] = $this->currentTimestamp();
-            }
-
-            // Align each row to the header columns by key so rows with differing
-            // keys are not positionally misaligned (absent column => NULL).
-            $rowValues = [];
-            foreach ($columns as $column) {
-                $rowValues[] = isset($row[$column]) ? $row[$column] : null;
-            }
-
+        foreach ($rows as $row) {
             $values[] = ' ('
                 . implode(
                     ', ',
-                    array_map(
-                        function ($value) {
-                            if (\is_null($value)) {
-                                return 'NULL';
-                            }
-
-                            if (\is_array($value) || \is_object($value)) {
-                                $value = wp_json_encode($value);
-                            }
-
-                            $this->bindings[] = $value;
-
-                            return $this->getValueType($value);
-                        },
-                        $rowValues
-                    )
+                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
                 ) . ')';
         }
 
@@ -2333,15 +2418,18 @@ class QueryBuilder
         }
 
         $columnsToPrepare = $this->withoutRelationColumns($columnsToPrepare);
+        $columnsToPrepare = $this->normalizeWriteColumns($columnsToPrepare);
 
         if (property_exists($this->_model, 'timestamps') && $this->_model->timestamps) {
-            if (!$isUpdate) {
+            if (!$isUpdate && !\in_array('created_at', $columnsToPrepare, true)) {
                 $this->_model->setAttribute('created_at', $this->currentTimestamp());
                 $columnsToPrepare[] = 'created_at';
             }
 
             $this->_model->setAttribute('updated_at', $this->currentTimestamp());
-            $columnsToPrepare[] = 'updated_at';
+            if (!\in_array('updated_at', $columnsToPrepare, true)) {
+                $columnsToPrepare[] = 'updated_at';
+            }
         }
 
         $attributes = $this->_model->getAttributes();
@@ -2389,7 +2477,7 @@ class QueryBuilder
     private function prepareInsert()
     {
         $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $this->insert) . ')';
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($this->insert)) . ')';
         $sql .= ' VALUES ('
             . implode(
                 ', ',
@@ -2430,7 +2518,8 @@ class QueryBuilder
         $sql .= ' SET ';
         $columnCount = \count($this->update);
         foreach ($this->update as $key => $column) {
-            $value = $setBindings[$key];
+            $value  = $setBindings[$key];
+            $column = $this->compileWriteColumn($column);
             if (\is_null($value)) {
                 $sql .= $column . ' = NULL';
             } else {

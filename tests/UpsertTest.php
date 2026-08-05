@@ -24,7 +24,7 @@ final class UpsertTest extends TestCase
     }
 
     /**
-     * Column names are ordered to match the (alphabetically) sorted row values.
+     * Column names and values preserve first-seen input order.
      */
     public function testUpsertAlignsColumnsWithValues(): void
     {
@@ -32,8 +32,8 @@ final class UpsertTest extends TestCase
 
         $sql = $GLOBALS['wpdb']->last_query;
 
-        $this->assertStringContainsString('(email, first_name)', $sql);
-        $this->assertStringContainsString("('a@x.com', 'Ada')", $sql);
+        $this->assertStringContainsString('(`first_name`, `email`)', $sql);
+        $this->assertStringContainsString("('Ada', 'a@x.com')", $sql);
     }
 
     /**
@@ -51,10 +51,10 @@ final class UpsertTest extends TestCase
         $this->assertStringContainsString('created_at', $sql);
         $this->assertStringContainsString('updated_at', $sql);
         // updated_at is bumped from its own inserted value, not created_at
-        $this->assertStringContainsString('updated_at = VALUES(updated_at)', $sql);
-        $this->assertStringNotContainsString('VALUES(created_at)', $sql);
+        $this->assertStringContainsString('`updated_at` = VALUES(`updated_at`)', $sql);
+        $this->assertStringNotContainsString('VALUES(`created_at`)', $sql);
         // created_at is preserved on update (never in the update set)
-        $this->assertStringNotContainsString('created_at = VALUES(created_at)', $sql);
+        $this->assertStringNotContainsString('`created_at` = VALUES(`created_at`)', $sql);
     }
 
     /**
@@ -69,7 +69,7 @@ final class UpsertTest extends TestCase
 
         $sql = $GLOBALS['wpdb']->last_query;
 
-        $this->assertStringContainsString('created_at = VALUES(created_at)', $sql);
+        $this->assertStringContainsString('`created_at` = VALUES(`created_at`)', $sql);
         $this->assertStringNotContainsString('updated_at', $sql);
     }
 

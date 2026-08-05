@@ -386,7 +386,7 @@ final class StructuredClauseSafetyTest extends TestCase
             ->update(['status' => 'archived']);
 
         $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
-        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET `status` = 'archived'", $GLOBALS['wpdb']->last_query);
         $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
     }
 
@@ -398,7 +398,7 @@ final class StructuredClauseSafetyTest extends TestCase
             ->update(['status' => 'archived']);
 
         $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
-        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET `status` = 'archived'", $GLOBALS['wpdb']->last_query);
         $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
     }
 
@@ -410,7 +410,7 @@ final class StructuredClauseSafetyTest extends TestCase
             ->update(['status' => 'archived']);
 
         $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
-        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET `status` = 'archived'", $GLOBALS['wpdb']->last_query);
         $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
     }
 

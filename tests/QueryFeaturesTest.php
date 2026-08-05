@@ -155,7 +155,7 @@ final class QueryFeaturesTest extends TestCase
         $sql = $GLOBALS['wpdb']->last_query;
 
         $this->assertStringStartsWith('UPDATE wp_users', $sql);
-        $this->assertMatchesRegularExpression('/SET\s+status\s*=/i', $sql);
+        $this->assertMatchesRegularExpression('/SET\s+`status`\s*=/i', $sql);
         $this->assertStringContainsString('WHERE', $sql);
     }
 

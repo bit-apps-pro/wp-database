@@ -83,7 +83,7 @@ final class WriteEdgeFixTest extends TestCase
         User::query()->upsert(['email' => 'a@x.com'], []);
 
         $sql = $GLOBALS['wpdb']->last_query;
-        $this->assertStringContainsString('email = VALUES(email)', $sql);
+        $this->assertStringContainsString('`email` = VALUES(`email`)', $sql);
         $this->assertStringNotContainsString('UPDATE ;', $sql);
     }
 
