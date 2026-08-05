@@ -44,8 +44,8 @@ final class QueryFeaturesTest extends TestCase
 
         $this->assertStringContainsString('INNER JOIN', $sql);
         // Unprefixed model/join table names in ON columns resolve to physical.
-        $this->assertStringContainsString('`wp_posts`.user_id', $sql);
-        $this->assertStringContainsString('`wp_users`.id', $sql);
+        $this->assertStringContainsString('`wp_posts`.`user_id`', $sql);
+        $this->assertStringContainsString('`wp_users`.`id`', $sql);
     }
 
     public function testLeftJoinThenWhereKeepsBindingsInOrder(): void

@@ -4,6 +4,7 @@ namespace BitApps\WPDatabase;
 
 use BitApps\WPDatabase\Concerns\QueriesRelationships;
 use BitApps\WPDatabase\Query\Grammar;
+use BitApps\WPDatabase\Query\Identifier;
 
 use Closure;
 use DateTime;
@@ -363,20 +364,7 @@ class QueryBuilder
 
     public function prepareColumnName(string $column)
     {
-        if (preg_match('/^(.+?)\s+as\s+(.+)$/i', $column, $matches)) {
-            return $this->prepareColumnName(trim($matches[1])) . ' AS `' . trim($matches[2], " `") . '`';
-        }
-
-        if (strpos($column, '.') !== false) {
-            return $column;
-        }
-
-        $table = "`{$this->table}`.";
-        if ($column != '*') {
-            $column = "`{$column}`";
-        }
-
-        return $table . $column;
+        return $this->renderIdentifier($column, true, true);
     }
 
     /**
@@ -392,7 +380,7 @@ class QueryBuilder
 
         $this->select = [];
         foreach ($select as $column) {
-            $this->select[] = $this->prepareColumnName($column);
+            $this->select[] = $column;
         }
 
         return $this;
@@ -437,7 +425,7 @@ class QueryBuilder
             if (\in_array($column, $this->select, true)) {
                 continue;
             }
-            $this->select[] = $this->prepareColumnName($column);
+            $this->select[] = $column;
         }
 
         return $this;
@@ -895,10 +883,13 @@ class QueryBuilder
     }
 
     /**
-     * Rewrites a qualified column whose table part is an unprefixed name this
-     * query owns (`users.id` -> `` `wp_users`.id ``). Aliases win over the map,
-     * and unknown / already-physical qualifiers pass through unchanged.
-     * Idempotent: a physical qualifier is never a map key.
+     * Renders a structured column identifier in this query's table context.
+     *
+     * Bare columns are qualified with the model's physical table. A qualified
+     * column must name a registered logical table, its mapped physical table,
+     * or an alias in scope. Unknown and schema-qualified names intentionally
+     * fail closed; callers needing those rare forms must register the table or
+     * alias, or use a reviewed raw-expression API.
      *
      * @param mixed $column
      *
@@ -910,21 +901,55 @@ class QueryBuilder
             return $column;
         }
 
-        $dot = strpos($column, '.');
-        if ($dot === false) {
-            return $column;
+        return $this->renderIdentifier($column, true, true);
+    }
+
+    /**
+     * Validates, resolves, and quotes a column at the SQL rendering boundary.
+     *
+     * @param string $column
+     * @param bool   $allowWildcard
+     * @param bool   $allowAlias
+     *
+     * @return string
+     */
+    public function renderIdentifier(string $column, bool $allowWildcard = false, bool $allowAlias = false): string
+    {
+        if (preg_match('/^(.+?)\s+AS\s+(.+)$/i', $column, $matches)) {
+            if (!$allowAlias) {
+                throw new RuntimeException('Aliases are not allowed in this SQL identifier context.');
+            }
+
+            return $this->renderIdentifier($matches[1], $allowWildcard)
+                . ' AS ' . Identifier::quoteAlias($matches[2]);
         }
 
-        $left  = trim(substr($column, 0, $dot), '`');
-        $right = substr($column, $dot + 1);
-
-        if (\in_array($left, $this->getTableAliases(), true)) {
-            return $column;
+        $segments = explode('.', $column);
+        if (\count($segments) > 2) {
+            throw new RuntimeException('Unknown or schema-qualified SQL identifier.');
         }
 
-        $map = $this->getTableMap();
+        Identifier::quoteQualified($column, $allowWildcard);
 
-        return isset($map[$left]) ? '`' . $map[$left] . '`.' . $right : $column;
+        if (\count($segments) === 1) {
+            return Identifier::quoteQualified($this->table . '.' . $column, $allowWildcard);
+        }
+
+        [$qualifier, $name] = $segments;
+        $aliases            = $this->getTableAliases();
+        $map                = $this->getTableMap();
+
+        if (\in_array($qualifier, $aliases, true)) {
+            $resolved = $qualifier;
+        } elseif (isset($map[$qualifier])) {
+            $resolved = $map[$qualifier];
+        } elseif (\in_array($qualifier, array_values($map), true)) {
+            $resolved = $qualifier;
+        } else {
+            throw new RuntimeException('Unknown SQL identifier qualifier.');
+        }
+
+        return Identifier::quoteQualified($resolved . '.' . $name, $allowWildcard);
     }
 
     /**
@@ -1874,9 +1899,11 @@ class QueryBuilder
      */
     private function assertSafeIdentifier($column)
     {
-        if (!\is_string($column) || !preg_match('/^[A-Za-z0-9_.`]+$/', $column)) {
+        if (!\is_string($column)) {
             throw new RuntimeException('Unsafe column passed to order/group by clause.');
         }
+
+        Identifier::quoteQualified($column);
     }
 
     /**

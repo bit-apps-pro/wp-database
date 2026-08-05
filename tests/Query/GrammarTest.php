@@ -72,7 +72,7 @@ final class GrammarTest extends TestCase
     public function testJoin(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users INNER JOIN wp_posts ON  `wp_users`.`user_id` = wp_posts.id',
+            'SELECT  FROM wp_users INNER JOIN wp_posts ON  `wp_users`.`user_id` = `wp_posts`.`id`',
             (new User())->join('posts', 'user_id', '=', 'id')->toSql()
         );
     }
@@ -81,21 +81,21 @@ final class GrammarTest extends TestCase
     {
         $sql = (new User())->join('posts as p', 'user_id', '=', 'id')->toSql();
         $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
-        $this->assertStringContainsString('= p.id', $sql);
+        $this->assertStringContainsString('= `p`.`id`', $sql);
     }
 
     public function testJoinWithDottedColumnsResolvesKnownTables(): void
     {
         // Unprefixed model/join table names in ON columns resolve to physical.
         $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->toSql();
-        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id', $sql);
+        $this->assertStringContainsString('`wp_posts`.`user_id` = `wp_users`.`id`', $sql);
     }
 
     public function testJoinAliasSplitToleratesExtraWhitespace(): void
     {
         $sql = (new User())->join('posts   as   p', 'user_id', '=', 'id')->toSql();
         $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
-        $this->assertStringContainsString('= p.id', $sql);
+        $this->assertStringContainsString('= `p`.`id`', $sql);
     }
 
     public function testJoinOnConstantSecondOperandNotPrefixed(): void
@@ -115,7 +115,7 @@ final class GrammarTest extends TestCase
     public function testGroupBy(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users GROUP BY status',
+            'SELECT  FROM wp_users GROUP BY `wp_users`.`status`',
             (new User())->groupBy('status')->toSql()
         );
     }
@@ -123,7 +123,7 @@ final class GrammarTest extends TestCase
     public function testHaving(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users GROUP BY status HAVING  `wp_users`.`id` > %d',
+            'SELECT  FROM wp_users GROUP BY `wp_users`.`status` HAVING  `wp_users`.`id` > %d',
             (new User())->groupBy('status')->having('id', '>', 1)->toSql()
         );
     }
@@ -131,7 +131,7 @@ final class GrammarTest extends TestCase
     public function testOrderByDesc(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users ORDER BY id DESC',
+            'SELECT  FROM wp_users ORDER BY `wp_users`.`id` DESC',
             (new User())->orderBy('id')->desc()->toSql()
         );
     }

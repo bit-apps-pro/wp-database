@@ -28,8 +28,10 @@ class Grammar
     {
         $query->resetBindings();
 
-        $columns = array_map([$query, 'resolveQualifier'], $query->select);
-        $sql     = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
+        $columns = array_map(static function ($column) use ($query) {
+            return $query->renderIdentifier($column, true, true);
+        }, $query->select);
+        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
         $sql .= $this->prepareRawSelect($query);
         $sql .= ' FROM ' . $query->getTable();
         $sql .= $this->getFrom($query);
@@ -149,7 +151,9 @@ class Grammar
             return '';
         }
 
-        return ' GROUP BY ' . implode(',', array_map([$query, 'resolveQualifier'], $groupBy));
+        return ' GROUP BY ' . implode(',', array_map(static function ($column) use ($query) {
+            return $query->renderIdentifier($column);
+        }, $groupBy));
     }
 
     /**
@@ -185,7 +189,7 @@ class Grammar
                 $sql .= $order['raw'] . ', ';
                 $query->addBindings($order['bindings']);
             } elseif (isset($order['column'])) {
-                $sql .= $query->resolveQualifier($order['column']) . ' ' . $order['direction'] . ', ';
+                $sql .= $query->renderIdentifier($order['column']) . ' ' . $order['direction'] . ', ';
             }
         }
 
@@ -259,7 +263,7 @@ class Grammar
     private function prepareColumnForWhere(QueryBuilder $query, $clause)
     {
         if (isset($clause['column'])) {
-            return ' ' . $query->resolveQualifier($query->prepareColumnName($clause['column']));
+            return ' ' . $query->renderIdentifier($clause['column']);
         }
     }
 
@@ -301,7 +305,11 @@ class Grammar
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
-            return ' ' . $query->resolveQualifier($clause['secondColumn']);
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$/', $clause['secondColumn'])) {
+                return ' ' . $query->renderIdentifier($clause['secondColumn']);
+            }
+
+            return ' ' . $clause['secondColumn'];
         }
 
         if (!isset($clause['value'])) {

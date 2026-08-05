@@ -147,7 +147,7 @@ trait QueriesRelationships
         $this->assertSafeAggregateFunction($function);
 
         if (empty($this->select)) {
-            $this->select = ["`{$this->_model->getTable()}`.*"];
+            $this->select = [$this->_model->getTable() . '.*'];
         }
 
         [$relations, $columns] = $this->normalizeAggregateRelations((array) $relation, $column);
