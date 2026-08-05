@@ -501,10 +501,13 @@ Not signature breaks, but observable runtime differences.
   `insert()` row whose first value is an array no longer crashes.
 - **`take()` / `skip()` cast their argument to `int`** — blocks `LIMIT`/`OFFSET`
   injection; numeric input is byte-identical.
-- **`orderBy()` / `groupBy()` validate the column** as a plain identifier
-  (`^[A-Za-z0-9_.`]+$`) and throw `RuntimeException` otherwise — blocks
-  `ORDER BY`/`GROUP BY` injection. Plain/qualified identifiers emit byte-identical
-  SQL; pass raw expressions through `orderByRaw()`.
+- **`orderBy()` / `groupBy()` use the strict structured identifier renderer.**
+  Accepted bare and qualified columns are resolved against registered
+  base/from/join tables and aliases, then each segment is backtick-quoted. Unknown
+  or schema-qualified names, pre-quoted input, comments, and expressions fail
+  closed with `RuntimeException`; emitted SQL is therefore not byte-identical to
+  the legacy unquoted output. Pass reviewed ordering expressions through
+  `orderByRaw()`.
 - **Cast aliases `integer`/`float`/`double`/`json`/`datetime` now work** (map onto
   the existing casters) — they were previously silent no-ops returning the raw value.
 - **Bulk `insert()` aligns ragged rows by column** — a row whose keys differ from

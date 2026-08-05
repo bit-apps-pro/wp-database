@@ -4,6 +4,7 @@ namespace BitApps\WPDatabase\Tests;
 
 use BitApps\WPDatabase\Tests\Fixtures\SoftPost;
 use BitApps\WPDatabase\Tests\Fixtures\User;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -15,6 +16,33 @@ use RuntimeException;
  */
 final class QualifiedColumnPrefixTest extends TestCase
 {
+    public static function baseQualifierProvider(): array
+    {
+        return [
+            'logical base table'  => ['users'],
+            'physical base table' => ['wp_users'],
+        ];
+    }
+
+    #[DataProvider('baseQualifierProvider')]
+    public function testFromAliasRewritesQualifiedBaseColumnsAcrossStructuredClauses($qualifier): void
+    {
+        $sql = (new User())->from('u')
+            ->select($qualifier . '.id')
+            ->join('posts AS p', $qualifier . '.id', '=', 'p.user_id')
+            ->where($qualifier . '.status', 'active')
+            ->groupBy($qualifier . '.id')
+            ->orderBy($qualifier . '.id')
+            ->toSql();
+
+        $this->assertStringContainsString('SELECT `u`.`id` FROM `wp_users` `u`', $sql);
+        $this->assertStringContainsString('ON  `u`.`id` = `p`.`user_id`', $sql);
+        $this->assertStringContainsString('WHERE  `u`.`status` = ', $sql);
+        $this->assertStringContainsString('GROUP BY `u`.`id`', $sql);
+        $this->assertStringContainsString('ORDER BY `u`.`id` ASC', $sql);
+        $this->assertStringNotContainsString('`wp_users`.`id`', $sql);
+    }
+
     public function testWhereResolvesUnprefixedModelTable(): void
     {
         $sql = (new User())->where('users.status', 1)->toSql();
