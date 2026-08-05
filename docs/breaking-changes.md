@@ -383,6 +383,8 @@ Migrate constants to the bound-value APIs and expressions to the explicit raw AP
 bind both bounds; hostile column text can no longer enter their SQL fragment.
 `FULL JOIN` is rejected because MySQL does not support it; use supported
 `INNER`, `LEFT`, `RIGHT`, or `CROSS` joins with a valid ON condition.
+Base-table aliases created with `from()` are SELECT-only; UPDATE and DELETE
+chains using them now throw before execution rather than emit an undeclared alias.
 
 ---
 

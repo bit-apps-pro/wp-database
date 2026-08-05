@@ -298,6 +298,10 @@ and `orderBy`. Already-prefixed names and registered aliases are recognized;
 unknown/schema-qualified names fail closed. Use `table AS alias` when declaring a
 join alias and `from('alias')` for the base-table alias.
 
+`from()` aliases are supported for SELECT queries. UPDATE and DELETE reject a
+base-table alias before execution because their current compilers do not declare
+one; remove `from()` from write chains.
+
 `join()`, `on()`, and `orOn()` are column-to-column APIs. They no longer guess
 whether the right operand is a number, quoted literal, or SQL function. Move
 constants to `joinWhere()` / `onValue()` and reviewed expressions to `onRaw()`.

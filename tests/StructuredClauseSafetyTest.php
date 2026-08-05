@@ -310,9 +310,6 @@ final class StructuredClauseSafetyTest extends TestCase
             'where range with scalar' => [static function (): void {
                 User::query()->where('id', 'BETWEEN', 1)->get();
             }],
-            'where list through binary API' => [static function (): void {
-                User::query()->where('id', 'IN', [1, 2])->get();
-            }],
             'having unary with value' => [static function (): void {
                 User::query()->having('id', 'IS NOT NULL', 1)->get();
             }],
@@ -415,5 +412,92 @@ final class StructuredClauseSafetyTest extends TestCase
         $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
         $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
         $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
+    }
+
+    public static function listConditionProvider(): array
+    {
+        return [
+            'where IN' => [static function () {
+                return User::query()->where('id', 'IN', [1, 2]);
+            }, 'WHERE  `wp_users`.`id` IN (%d,%d)'],
+            'where NOT IN' => [static function () {
+                return User::query()->where('id', 'NOT IN', [1, 2]);
+            }, 'WHERE  `wp_users`.`id` NOT IN (%d,%d)'],
+            'having IN' => [static function () {
+                return User::query()->having('id', 'IN', [1, 2]);
+            }, 'HAVING  `wp_users`.`id` IN (%d,%d)'],
+            'having NOT IN' => [static function () {
+                return User::query()->having('id', 'NOT IN', [1, 2]);
+            }, 'HAVING  `wp_users`.`id` NOT IN (%d,%d)'],
+        ];
+    }
+
+    #[DataProvider('listConditionProvider')]
+    public function testWhereAndHavingPreserveNonEmptyListOperators(callable $build, string $expected): void
+    {
+        $query = $build();
+
+        $this->assertStringContainsString($expected, $query->toSql());
+        $this->assertSame([1, 2], $query->getBindings());
+    }
+
+    public static function emptyListConditionProvider(): array
+    {
+        return [
+            'where empty IN is false' => [static function () {
+                return User::query()->where('id', 'IN', []);
+            }, 'WHERE  0 = 1'],
+            'where empty NOT IN is true' => [static function () {
+                return User::query()->where('id', 'NOT IN', []);
+            }, 'WHERE  1 = 1'],
+            'having empty IN is false' => [static function () {
+                return User::query()->having('id', 'IN', []);
+            }, 'HAVING  0 = 1'],
+            'having empty NOT IN is true' => [static function () {
+                return User::query()->having('id', 'NOT IN', []);
+            }, 'HAVING  1 = 1'],
+        ];
+    }
+
+    #[DataProvider('emptyListConditionProvider')]
+    public function testWhereAndHavingCompileEmptyListsToBooleanConstants(callable $build, string $expected): void
+    {
+        $query = $build();
+
+        $this->assertStringContainsString($expected, $query->toSql());
+        $this->assertSame([], $query->getBindings());
+    }
+
+    public function testHostileListOperatorIsRejectedBeforeExecution(): void
+    {
+        try {
+            User::query()->where('id', 'IN/**/OR', [1, 2])->get();
+            $this->fail('Expected the hostile list operator to be rejected.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame([], $GLOBALS['wpdb']->queries);
+        }
+    }
+
+    public static function aliasedWriteProvider(): array
+    {
+        return [
+            'update' => [static function (): void {
+                User::query()->from('u')->where('id', 7)->update(['status' => 'archived']);
+            }],
+            'delete' => [static function (): void {
+                User::query()->from('u')->where('id', 7)->delete();
+            }],
+        ];
+    }
+
+    #[DataProvider('aliasedWriteProvider')]
+    public function testUnsupportedAliasedWritesAreRejectedBeforeExecution(callable $attempt): void
+    {
+        try {
+            $attempt();
+            $this->fail('Expected an aliased write to be rejected.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame([], $GLOBALS['wpdb']->queries);
+        }
     }
 }

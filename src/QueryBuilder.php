@@ -2003,7 +2003,8 @@ class QueryBuilder
      * on prepare, independent of arity: an empty array becomes the false
      * constant `0 = 1`; a null value with an explicit operator becomes
      * IS [NOT] NULL; a non-empty array has its elements coerced to scalars; an
-     * object value is JSON-encoded. Having clauses are left untouched.
+     * object value is JSON-encoded. Explicit list operators are normalized by
+     * value shape for both where and having clauses.
      *
      * @param array  $conditions
      * @param string $type
@@ -2020,11 +2021,7 @@ class QueryBuilder
             $this->assertSafeIdentifier($conditions['column']);
         }
 
-        if (isset($conditions['operator'])) {
-            $conditions['operator'] = SqlOperator::normalizeBinary($conditions['operator']);
-        }
-
-        if ($type !== 'where' || !\array_key_exists('value', $conditions)) {
+        if (!\array_key_exists('value', $conditions)) {
             return $conditions;
         }
 
@@ -2032,12 +2029,30 @@ class QueryBuilder
         $bool  = isset($conditions['bool']) ? $conditions['bool'] : 'AND';
 
         if (\is_array($value)) {
+            $operator = 'IN';
+            if (isset($conditions['operator'])) {
+                $operator              = SqlOperator::normalizeList($conditions['operator']);
+                $conditions['operator'] = $operator;
+            }
+
             if ($value === []) {
-                return ['bool' => $bool, 'raw' => '0 = 1', 'bindings' => []];
+                return [
+                    'bool'     => $bool,
+                    'raw'      => $operator === 'NOT IN' ? '1 = 1' : '0 = 1',
+                    'bindings' => [],
+                ];
             }
 
             $conditions['value'] = $this->sanitizeInValues($value);
 
+            return $conditions;
+        }
+
+        if (isset($conditions['operator'])) {
+            $conditions['operator'] = SqlOperator::normalizeBinary($conditions['operator']);
+        }
+
+        if ($type !== 'where') {
             return $conditions;
         }
 
@@ -2332,6 +2347,10 @@ class QueryBuilder
      */
     private function prepareUpdate()
     {
+        if (isset($this->_from)) {
+            throw new RuntimeException('Table aliases are not supported for write queries.');
+        }
+
         $setBindings    = $this->bindings;
         $this->bindings = [];
 
@@ -2365,6 +2384,10 @@ class QueryBuilder
      */
     private function prepareDelete()
     {
+        if (isset($this->_from)) {
+            throw new RuntimeException('Table aliases are not supported for write queries.');
+        }
+
         $whereClause = $this->grammar()->getWhere($this);
 
         if (empty($whereClause)) {
