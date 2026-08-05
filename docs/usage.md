@@ -273,6 +273,20 @@ Contact::query()
     ->leftJoin('notes', 'notes.contact_id', '=', 'contacts.id')
     ->get();
 // also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
+
+// Compare a join column with bound values (never interpolated as SQL).
+Contact::query()
+    ->joinWhere('orders', 'orders.status', '=', 'open')
+    ->onValue('orders.priority', '>=', 10)
+    ->orOnValue('orders.kind', '=', 'featured')
+    ->get();
+
+// Developer-controlled expression. Bind every dynamic value.
+Contact::query()
+    ->join('orders', 'orders.contact_id', '=', 'contacts.id')
+    ->onRaw('`wp_orders`.`created_at` < NOW()')
+    ->orOnRaw('`wp_orders`.`priority` > %d', [10])
+    ->get();
 ```
 
 Pass **unprefixed** table names — `join()` prepends the model's full table prefix
@@ -280,8 +294,13 @@ Pass **unprefixed** table names — `join()` prepends the model's full table pre
 `$prefix`). Qualify columns as `table.column` using the **unprefixed** table name:
 the builder resolves a qualifier that matches the model's own table or a joined
 table to its physical, prefixed name in `select`, `where`/`having`, `ON`, `groupBy`
-and `orderBy`. Already-prefixed names, table aliases, and unknown tables are left
-untouched.
+and `orderBy`. Already-prefixed names and registered aliases are recognized;
+unknown/schema-qualified names fail closed. Use `table AS alias` when declaring a
+join alias and `from('alias')` for the base-table alias.
+
+`join()`, `on()`, and `orOn()` are column-to-column APIs. They no longer guess
+whether the right operand is a number, quoted literal, or SQL function. Move
+constants to `joinWhere()` / `onValue()` and reviewed expressions to `onRaw()`.
 
 ### Limit / offset / pagination
 
@@ -745,4 +764,3 @@ method relocation.
   (`Connection::getPrefix()`). The `$prefix` property intentionally defaults to `null`
   (not `''`) to preserve bare-table behaviour for plugins that rely on it.
   See [Schema builder reference](schema.md).
-

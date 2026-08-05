@@ -34,6 +34,6 @@ final class TablePrefixTest extends TestCase
             ->join('gadgets', 'gadgets.widget_id', '=', 'widgets.id')
             ->toSql();
 
-        $this->assertStringContainsString('JOIN wp_crm_gadgets', $sql);
+        $this->assertStringContainsString('JOIN `wp_crm_gadgets`', $sql);
     }
 }

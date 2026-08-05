@@ -64,18 +64,18 @@ final class BelongsToManyPivotTest extends TestCase
 
         $this->assertStringContainsString('SELECT `wp_roles`.*', $sql);
         $this->assertStringContainsString('wp_role_user.member_id as `pivot_member_id`', $sql);
-        $this->assertStringContainsString('INNER JOIN wp_role_user', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_role_user`', $sql);
         $this->assertStringContainsString('`wp_role_user`.`role_id` = `wp_roles`.`id`', $sql);
         // Inner fragment without a leading `WHERE ` boundary: the grammar emits `WHERE  ` (double space).
         $this->assertStringContainsString(
-            'wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM wp_members) AS subquery )',
+            'wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM `wp_members`) AS subquery )',
             $sql
         );
 
         // Exact pin (absorbs the double-space WHERE/ON grammar artifacts).
         $expected = 'SELECT `wp_roles`.*, wp_role_user.member_id as `pivot_member_id`'
-            . ' FROM wp_roles INNER JOIN wp_role_user ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
-            . ' WHERE  wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM wp_members) AS subquery )';
+            . ' FROM `wp_roles` INNER JOIN `wp_role_user` ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
+            . ' WHERE  wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM `wp_members`) AS subquery )';
         $this->assertSame($expected, $sql);
     }
 
@@ -93,7 +93,7 @@ final class BelongsToManyPivotTest extends TestCase
 
         // Exact pin: single-value predicate, double-space WHERE/ON/`=` grammar artifacts.
         $expected = 'SELECT `wp_roles`.*, wp_role_user.member_id as `pivot_member_id`'
-            . ' FROM wp_roles INNER JOIN wp_role_user ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
+            . ' FROM `wp_roles` INNER JOIN `wp_role_user` ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
             . ' WHERE  `wp_role_user`.`member_id` =  1';
         $this->assertSame($expected, $sql);
     }

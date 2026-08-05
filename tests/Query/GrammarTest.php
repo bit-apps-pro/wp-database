@@ -17,7 +17,7 @@ final class GrammarTest extends TestCase
     public function testSelectAllCompilesToQualifiedStar(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.* FROM wp_users',
+            'SELECT `wp_users`.* FROM `wp_users`',
             User::select('*')->toSql()
         );
     }
@@ -25,7 +25,7 @@ final class GrammarTest extends TestCase
     public function testSelectSpecificColumns(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id`,`wp_users`.`user_login` FROM wp_users',
+            'SELECT `wp_users`.`id`,`wp_users`.`user_login` FROM `wp_users`',
             (new User())->select('id', 'user_login')->toSql()
         );
     }
@@ -33,7 +33,7 @@ final class GrammarTest extends TestCase
     public function testWhereEquals(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users WHERE  `wp_users`.`id` =  %d',
+            'SELECT  FROM `wp_users` WHERE  `wp_users`.`id` =  %d',
             (new User())->where('id', 5)->toSql()
         );
     }
@@ -41,7 +41,7 @@ final class GrammarTest extends TestCase
     public function testWhereWithOperator(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users WHERE  `wp_users`.`id` > %d',
+            'SELECT  FROM `wp_users` WHERE  `wp_users`.`id` > %d',
             (new User())->where('id', '>', 0)->toSql()
         );
     }
@@ -49,7 +49,7 @@ final class GrammarTest extends TestCase
     public function testOrWhere(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users WHERE  `wp_users`.`a` =  %d OR `wp_users`.`b` =  %d',
+            'SELECT  FROM `wp_users` WHERE  `wp_users`.`a` =  %d OR `wp_users`.`b` =  %d',
             (new User())->where('a', 1)->orWhere('b', 2)->toSql()
         );
     }
@@ -61,7 +61,7 @@ final class GrammarTest extends TestCase
         })->toSql();
 
         $this->assertSame(
-            'SELECT  FROM wp_users WHERE  `wp_users`.`a` =  %d AND '
+            'SELECT  FROM `wp_users` WHERE  `wp_users`.`a` =  %d AND '
             . '( `wp_users`.`b` =  %d OR `wp_users`.`c` =  %d)',
             $sql
         );
@@ -72,7 +72,7 @@ final class GrammarTest extends TestCase
     public function testJoin(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users INNER JOIN wp_posts ON  `wp_users`.`user_id` = `wp_posts`.`id`',
+            'SELECT  FROM `wp_users` INNER JOIN `wp_posts` ON  `wp_users`.`user_id` = `wp_posts`.`id`',
             (new User())->join('posts', 'user_id', '=', 'id')->toSql()
         );
     }
@@ -80,7 +80,7 @@ final class GrammarTest extends TestCase
     public function testJoinWithAlias(): void
     {
         $sql = (new User())->join('posts as p', 'user_id', '=', 'id')->toSql();
-        $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_posts` AS `p` ON', $sql);
         $this->assertStringContainsString('= `p`.`id`', $sql);
     }
 
@@ -94,28 +94,30 @@ final class GrammarTest extends TestCase
     public function testJoinAliasSplitToleratesExtraWhitespace(): void
     {
         $sql = (new User())->join('posts   as   p', 'user_id', '=', 'id')->toSql();
-        $this->assertStringContainsString('INNER JOIN wp_posts as p ON', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_posts` AS `p` ON', $sql);
         $this->assertStringContainsString('= `p`.`id`', $sql);
     }
 
-    public function testJoinOnConstantSecondOperandNotPrefixed(): void
+    public function testJoinWhereBindsConstantSecondOperand(): void
     {
-        $sql = (new User())->join('posts', 'posts.owner_id', '=', '5')->toSql();
-        $this->assertStringContainsString('= 5', $sql);
-        $this->assertStringNotContainsString('.5', $sql);
+        $query = (new User())->joinWhere('posts', 'posts.owner_id', '=', 5);
+
+        $this->assertStringContainsString('= %d', $query->toSql());
+        $this->assertSame([5], $query->getBindings());
     }
 
-    public function testJoinOnFunctionSecondOperandNotPrefixed(): void
+    public function testJoinOnFunctionUsesExplicitRawPath(): void
     {
-        $sql = (new User())->join('posts', 'posts.created', '<', 'NOW()')->toSql();
-        $this->assertStringContainsString('< NOW()', $sql);
-        $this->assertStringNotContainsString('.NOW', $sql);
+        $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')
+            ->onRaw('`wp_posts`.`created` < NOW()')->toSql();
+
+        $this->assertStringContainsString('AND `wp_posts`.`created` < NOW()', $sql);
     }
 
     public function testGroupBy(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users GROUP BY `wp_users`.`status`',
+            'SELECT  FROM `wp_users` GROUP BY `wp_users`.`status`',
             (new User())->groupBy('status')->toSql()
         );
     }
@@ -123,7 +125,7 @@ final class GrammarTest extends TestCase
     public function testHaving(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users GROUP BY `wp_users`.`status` HAVING  `wp_users`.`id` > %d',
+            'SELECT  FROM `wp_users` GROUP BY `wp_users`.`status` HAVING  `wp_users`.`id` > %d',
             (new User())->groupBy('status')->having('id', '>', 1)->toSql()
         );
     }
@@ -131,7 +133,7 @@ final class GrammarTest extends TestCase
     public function testOrderByDesc(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users ORDER BY `wp_users`.`id` DESC',
+            'SELECT  FROM `wp_users` ORDER BY `wp_users`.`id` DESC',
             (new User())->orderBy('id')->desc()->toSql()
         );
     }
@@ -139,7 +141,7 @@ final class GrammarTest extends TestCase
     public function testLimitAndOffset(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users LIMIT 10 OFFSET 20',
+            'SELECT  FROM `wp_users` LIMIT 10 OFFSET 20',
             (new User())->take(10)->skip(20)->toSql()
         );
     }
@@ -147,7 +149,7 @@ final class GrammarTest extends TestCase
     public function testLimitWithoutOffsetOmitsOffsetClause(): void
     {
         $this->assertSame(
-            'SELECT  FROM wp_users LIMIT 5',
+            'SELECT  FROM `wp_users` LIMIT 5',
             (new User())->take(5)->toSql()
         );
     }
@@ -163,7 +165,7 @@ final class GrammarTest extends TestCase
     public function testDistinctEmitsSelectDistinct(): void
     {
         $this->assertSame(
-            'SELECT DISTINCT `wp_users`.`id` FROM wp_users',
+            'SELECT DISTINCT `wp_users`.`id` FROM `wp_users`',
             (new User())->select('id')->distinct()->toSql()
         );
     }
@@ -171,7 +173,7 @@ final class GrammarTest extends TestCase
     public function testWithoutDistinctSelectIsUnchanged(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id` FROM wp_users',
+            'SELECT `wp_users`.`id` FROM `wp_users`',
             (new User())->select('id')->toSql()
         );
     }

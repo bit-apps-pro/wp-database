@@ -96,7 +96,7 @@ final class EagerLoadIntegrationTest extends TestCase
 
         $this->assertStringNotContainsString('CONCAT', $postsSql);
         $this->assertStringContainsString(
-            'IN ( SELECT * FROM (SELECT `wp_users`.`id` FROM wp_users',
+            'IN ( SELECT * FROM (SELECT `wp_users`.`id` FROM `wp_users`',
             $postsSql
         );
     }

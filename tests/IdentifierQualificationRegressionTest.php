@@ -16,7 +16,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testBareColumnUsesPhysicalModelTable(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id` FROM wp_users',
+            'SELECT `wp_users`.`id` FROM `wp_users`',
             (new User())->select('id')->toSql()
         );
     }
@@ -24,7 +24,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testLogicalModelQualifierMapsToPhysicalTable(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id` FROM wp_users',
+            'SELECT `wp_users`.`id` FROM `wp_users`',
             (new User())->select('users.id')->toSql()
         );
     }
@@ -32,7 +32,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testPhysicalModelQualifierIsRecognizedAndQuoted(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id` FROM wp_users',
+            'SELECT `wp_users`.`id` FROM `wp_users`',
             (new User())->select('wp_users.id')->toSql()
         );
     }
@@ -40,7 +40,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testJoinAliasQualifierIsPreservedAndQuoted(): void
     {
         $this->assertSame(
-            'SELECT `p`.`id` FROM wp_users INNER JOIN wp_posts as p'
+            'SELECT `p`.`id` FROM `wp_users` INNER JOIN `wp_posts` AS `p`'
                 . ' ON  `wp_users`.`user_id` = `p`.`id`',
             (new User())->join('posts as p', 'user_id', '=', 'id')->select('p.id')->toSql()
         );
@@ -49,7 +49,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testLogicalJoinedTableMapsWhenSelectPrecedesJoin(): void
     {
         $this->assertSame(
-            'SELECT `wp_posts`.`title` FROM wp_users INNER JOIN wp_posts'
+            'SELECT `wp_posts`.`title` FROM `wp_users` INNER JOIN `wp_posts`'
                 . ' ON  `wp_users`.`user_id` = `wp_posts`.`id`',
             (new User())->select('posts.title')->join('posts', 'user_id', '=', 'id')->toSql()
         );
@@ -58,7 +58,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testQualifiedWildcardResolvesOnlyAtSelectBoundary(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.* FROM wp_users',
+            'SELECT `wp_users`.* FROM `wp_users`',
             (new User())->select('users.*')->toSql()
         );
     }
@@ -66,7 +66,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testExplicitColumnAliasValidatesAndQuotesBothSides(): void
     {
         $this->assertSame(
-            'SELECT `wp_users`.`id` AS `user_id` FROM wp_users',
+            'SELECT `wp_users`.`id` AS `user_id` FROM `wp_users`',
             (new User())->select('id AS user_id')->toSql()
         );
     }
@@ -74,7 +74,7 @@ final class IdentifierQualificationRegressionTest extends TestCase
     public function testFromAliasQualifierIsRecognizedAndQuoted(): void
     {
         $this->assertSame(
-            'SELECT `u`.`id` FROM wp_users u',
+            'SELECT `u`.`id` FROM `wp_users` `u`',
             (new User())->from('u')->select('u.id')->toSql()
         );
     }

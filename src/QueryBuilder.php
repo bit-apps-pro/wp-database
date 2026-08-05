@@ -5,6 +5,8 @@ namespace BitApps\WPDatabase;
 use BitApps\WPDatabase\Concerns\QueriesRelationships;
 use BitApps\WPDatabase\Query\Grammar;
 use BitApps\WPDatabase\Query\Identifier;
+use BitApps\WPDatabase\Query\JoinType;
+use BitApps\WPDatabase\Query\SqlOperator;
 
 use Closure;
 use DateTime;
@@ -145,6 +147,11 @@ class QueryBuilder
      */
     public function from($_from)
     {
+        if (!\is_string($_from)) {
+            throw new RuntimeException('Invalid SQL table alias.');
+        }
+
+        Identifier::assertSimple($_from);
         $this->_from = $_from;
 
         return $this;
@@ -362,6 +369,11 @@ class QueryBuilder
         return $this->get($columns);
     }
 
+    /**
+     * Renders a select/aggregate column in this query's table context.
+     *
+     * @return string
+     */
     public function prepareColumnName(string $column)
     {
         return $this->renderIdentifier($column, true, true);
@@ -615,6 +627,8 @@ class QueryBuilder
      */
     public function whereIn($column, $value)
     {
+        $this->assertSafeIdentifier($column);
+
         if (\is_array($value)) {
             if ($value === []) {
                 return $this->whereRaw('0 = 1');
@@ -641,6 +655,8 @@ class QueryBuilder
      */
     public function whereNull($column)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NULL',
@@ -658,6 +674,8 @@ class QueryBuilder
      */
     public function whereNotNull($column)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NOT NULL',
@@ -701,10 +719,12 @@ class QueryBuilder
      */
     public function whereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
+            'column'   => $column,
+            'operator' => SqlOperator::normalize('BETWEEN'),
+            'between'  => [$start, $end],
         ];
 
         return $this;
@@ -721,10 +741,12 @@ class QueryBuilder
      */
     public function orWhereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
+            'column'   => $column,
+            'operator' => SqlOperator::normalize('BETWEEN'),
+            'between'  => [$start, $end],
             'bool'     => 'OR',
         ];
 
@@ -820,19 +842,77 @@ class QueryBuilder
      */
     public function join($table, $firstColumn, $operator = null, $secondColumn = null, $type = 'INNER')
     {
-        $parts         = preg_split('/\s+as\s+/i', trim($table), 2);
-        $rawTable      = $parts[0];
-        $alias         = isset($parts[1]) ? $parts[1] : null;
+        [$rawTable, $alias, $prefixedTable, $reference] = $this->parseJoinTable($table);
+
+        return $this->storeJoin(
+            $rawTable,
+            $alias,
+            $prefixedTable,
+            $reference,
+            $this->prepareOnColumn($reference, $firstColumn, $operator, $secondColumn),
+            $type
+        );
+    }
+
+    /**
+     * Joins a table using a bound scalar value as the right-hand operand.
+     *
+     * @return $this
+     */
+    public function joinWhere($table, $firstColumn, $operator, $value, $type = 'INNER')
+    {
+        [$rawTable, $alias, $prefixedTable, $reference] = $this->parseJoinTable($table);
+
+        return $this->storeJoin(
+            $rawTable,
+            $alias,
+            $prefixedTable,
+            $reference,
+            $this->prepareOnValue($firstColumn, $operator, $value),
+            $type
+        );
+    }
+
+    /**
+     * Parses a structured join table declaration with an optional explicit
+     * `AS` alias. Both identifiers remain logical state until compilation.
+     *
+     * @return array{string, null|string, string, string}
+     */
+    private function parseJoinTable($table)
+    {
+        if (!\is_string($table)
+            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
+        ) {
+            throw new RuntimeException('Invalid SQL join table declaration.');
+        }
+
+        $rawTable      = $matches[1];
+        $alias         = isset($matches[2]) ? $matches[2] : null;
         $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
         $reference     = $alias !== null ? $alias : $prefixedTable;
-        $tableSql      = $alias !== null ? $prefixedTable . ' as ' . $alias : $prefixedTable;
 
-        $on[]          = $this->prepareOn($reference, $firstColumn, $operator, $secondColumn, 'AND');
+        Identifier::assertSimple($rawTable);
+        Identifier::assertSimple($prefixedTable);
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        return [$rawTable, $alias, $prefixedTable, $reference];
+    }
+
+    /**
+     * Stores one validated join and its first ON condition.
+     *
+     * @return $this
+     */
+    private function storeJoin($rawTable, $alias, $prefixedTable, $reference, array $on, $type)
+    {
         $this->joins[] = [
-            'table'     => $tableSql,
+            'table'     => $prefixedTable,
             'alias'     => $reference,
-            'on'        => $on,
-            'type'      => $type,
+            'on'        => [$on],
+            'type'      => JoinType::normalize($type),
             'raw'       => $rawTable,
             'prefixed'  => $prefixedTable,
             'userAlias' => $alias,
@@ -1044,11 +1124,11 @@ class QueryBuilder
     {
         $joinIndex = (\count($this->joins) - 1);
         if ($joinIndex < 0) {
-            $joinIndex = 0;
+            throw new RuntimeException('Cannot add an ON clause before a join.');
         }
 
         $table                           = $this->joins[$joinIndex]['alias'];
-        $this->joins[$joinIndex]['on'][] = $this->prepareOn($table, $firstColumn, $operator, $secondColumn, $bool);
+        $this->joins[$joinIndex]['on'][] = $this->prepareOnColumn($table, $firstColumn, $operator, $secondColumn, $bool);
 
         return $this;
     }
@@ -1065,6 +1145,69 @@ class QueryBuilder
     public function orOn($firstColumn, $operator = null, $secondColumn = null)
     {
         return $this->on($firstColumn, $operator, $secondColumn, 'OR');
+    }
+
+    /**
+     * Adds an ON condition whose right-hand operand is a bound scalar value.
+     *
+     * @return $this
+     */
+    public function onValue($firstColumn, $operator, $value, $bool = 'AND')
+    {
+        $joinIndex = (\count($this->joins) - 1);
+        if ($joinIndex < 0) {
+            throw new RuntimeException('Cannot add an ON clause before a join.');
+        }
+
+        $this->joins[$joinIndex]['on'][] = $this->prepareOnValue($firstColumn, $operator, $value, $bool);
+
+        return $this;
+    }
+
+    /**
+     * Adds an OR ON condition whose right-hand operand is a bound scalar value.
+     *
+     * @return $this
+     */
+    public function orOnValue($firstColumn, $operator, $value)
+    {
+        return $this->onValue($firstColumn, $operator, $value, 'OR');
+    }
+
+    /**
+     * Adds an explicitly raw ON condition. The SQL must be developer-authored;
+     * dynamic values belong in placeholders and $bindings.
+     *
+     * @return $this
+     */
+    public function onRaw($sql, array $bindings = [], $bool = 'AND')
+    {
+        $joinIndex = (\count($this->joins) - 1);
+        if ($joinIndex < 0) {
+            throw new RuntimeException('Cannot add an ON clause before a join.');
+        }
+
+        if (!\is_string($sql) || $sql === '') {
+            throw new RuntimeException('Invalid raw ON expression.');
+        }
+
+        $this->joins[$joinIndex]['on'][] = [
+            'raw'      => $sql,
+            'bindings' => $bindings,
+            'bool'     => $this->normalizeBoolean($bool),
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds an explicitly raw OR ON condition.
+     *
+     * @return $this
+     */
+    public function orOnRaw($sql, array $bindings = [])
+    {
+        return $this->onRaw($sql, $bindings, 'OR');
     }
 
     /**
@@ -1642,6 +1785,8 @@ class QueryBuilder
             return $conditions;
         }
 
+        $bool = $this->normalizeBoolean($bool);
+
         if (\func_num_args() == 1 && \is_array($params[0])) {
             foreach ($params[0] as $clause) {
                 if ($type === 'where') {
@@ -1658,7 +1803,7 @@ class QueryBuilder
             \call_user_func($params[0], $nestedQuery);
             $conditions['query'] = $nestedQuery;
             if (isset($params[1])) {
-                $conditions['bool'] = $params[1];
+                $conditions['bool'] = $this->normalizeBoolean($params[1]);
             }
         } elseif ($noOfParams == 2) {
             $conditions['column'] = $params[0];
@@ -1671,7 +1816,7 @@ class QueryBuilder
             $conditions['column']                                     = $params[0];
             $conditions['operator']                                   = $params[1];
             $conditions[$type === 'where' ? 'value' : 'secondColumn'] = $params[2];
-            $conditions['bool']                                       = $params[3];
+            $conditions['bool']                                       = $this->normalizeBoolean($params[3]);
         }
 
         return $this->normalizeConditions($conditions, $type);
@@ -1723,21 +1868,46 @@ class QueryBuilder
      *
      * @return $this
      */
-    protected function prepareOn($table, $column, $operator, $secondColumn, $bool = 'AND')
+    protected function prepareOnColumn($table, $column, $operator, $secondColumn, $bool = 'AND')
     {
         if (\is_null($operator) && \is_null($secondColumn)) {
             $secondColumn = $column;
             $operator     = '=';
         }
 
-        // Qualify only a bare column identifier; leave constants, quoted values
-        // and function calls (10, 'active', NOW()) untouched, and dotted names
-        // that are already qualified.
-        if (!\is_null($secondColumn) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $secondColumn)) {
+        $this->assertSafeIdentifier($column);
+        $this->assertSafeIdentifier($secondColumn);
+        $operator = SqlOperator::normalize($operator);
+        $bool     = $this->normalizeBoolean($bool);
+
+        if (strpos($secondColumn, '.') === false) {
             $secondColumn = $table . '.' . $secondColumn;
         }
 
         return compact('column', 'operator', 'secondColumn', 'bool');
+    }
+
+    /**
+     * Prepares a join condition with a bound right-hand value.
+     *
+     * @return array
+     */
+    protected function prepareOnValue($column, $operator, $value, $bool = 'AND')
+    {
+        $this->assertSafeIdentifier($column);
+        if (\is_array($value) || \is_object($value) || \is_resource($value)) {
+            throw new RuntimeException('Join values must be scalar or null.');
+        }
+
+        $operator = SqlOperator::normalize($operator);
+        $bool     = $this->normalizeBoolean($bool);
+        if (\is_null($value)) {
+            $operator = $this->nullOperator($operator);
+
+            return compact('column', 'operator', 'bool');
+        }
+
+        return compact('column', 'operator', 'value', 'bool');
     }
 
     /**
@@ -1840,6 +2010,18 @@ class QueryBuilder
      */
     private function normalizeConditions(array $conditions, $type)
     {
+        if (isset($conditions['bool'])) {
+            $conditions['bool'] = $this->normalizeBoolean($conditions['bool']);
+        }
+
+        if (isset($conditions['column'])) {
+            $this->assertSafeIdentifier($conditions['column']);
+        }
+
+        if (isset($conditions['operator'])) {
+            $conditions['operator'] = SqlOperator::normalize($conditions['operator']);
+        }
+
         if ($type !== 'where' || !\array_key_exists('value', $conditions)) {
             return $conditions;
         }
@@ -1882,16 +2064,35 @@ class QueryBuilder
      */
     private function nullOperator($operator)
     {
-        $negations = ['!=', '<>', 'NOT', 'IS NOT', 'IS NOT NULL'];
+        $negations = ['!=', '<>', 'NOT LIKE', 'NOT IN', 'IS NOT NULL'];
 
         return \in_array($operator, $negations, true) ? 'IS NOT NULL' : 'IS NULL';
     }
 
     /**
-     * Guards an ORDER BY / GROUP BY column against injection: only a plain,
-     * qualified (table.column) or back-ticked identifier is accepted. Raw
-     * expressions must go through orderByRaw(). Valid identifiers are not
-     * re-rendered, so the emitted SQL stays byte-identical.
+     * Normalizes a structured boolean connector without accepting whitespace
+     * or comments around it.
+     *
+     * @return string
+     */
+    private function normalizeBoolean($bool)
+    {
+        if (!\is_string($bool)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        $normalized = strtoupper($bool);
+        if (!\in_array($normalized, ['AND', 'OR'], true)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Guards a structured column boundary. Only plain or qualified logical
+     * identifiers are accepted; raw expressions belong in an explicitly raw
+     * API and contextual qualification remains deferred until compilation.
      *
      * @param mixed $column
      *

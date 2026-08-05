@@ -29,7 +29,7 @@ final class RelationDefinitionRegressionTest extends TestCase
     {
         $sql = User::where('id', '>', 0)->toSql();
 
-        $this->assertStringContainsString('FROM wp_users', $sql);
+        $this->assertStringContainsString('FROM `wp_users`', $sql);
         $this->assertStringContainsString('WHERE', $sql);
     }
 

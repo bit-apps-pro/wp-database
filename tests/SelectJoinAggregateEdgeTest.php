@@ -66,7 +66,7 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     public function testEmptySelectEmitsQualifiedNothing(): void
     {
-        $this->assertStringContainsString('SELECT  FROM wp_users', (new User())->toSql());
+        $this->assertStringContainsString('SELECT  FROM `wp_users`', (new User())->toSql());
     }
 
     public function testPrepareColumnNameStarStaysQualifiedStar(): void
@@ -78,9 +78,9 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     public function testRightFullCrossJoinKeywords(): void
     {
-        $this->assertStringContainsString('RIGHT JOIN wp_posts', (new User())->rightJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
-        $this->assertStringContainsString('FULL JOIN wp_posts', (new User())->fullJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
-        $this->assertStringContainsString('CROSS JOIN wp_posts', (new User())->crossJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
+        $this->assertStringContainsString('RIGHT JOIN `wp_posts`', (new User())->rightJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
+        $this->assertStringContainsString('FULL JOIN `wp_posts`', (new User())->fullJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
+        $this->assertStringContainsString('CROSS JOIN `wp_posts`', (new User())->crossJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
     }
 
     public function testOnAndOrOnAppendToSameJoin(): void
@@ -97,7 +97,7 @@ final class SelectJoinAggregateEdgeTest extends TestCase
     {
         $sql = (new PrefixedModel())->join('gadgets', 'gid', '=', 'wid')->toSql();
 
-        $this->assertStringContainsString('INNER JOIN wp_crm_gadgets', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_crm_gadgets`', $sql);
         $this->assertStringContainsString('`wp_crm_widgets`.`gid` = `wp_crm_gadgets`.`wid`', $sql);
     }
 

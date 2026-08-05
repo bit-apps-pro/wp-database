@@ -79,7 +79,7 @@ final class QueryFeaturesTest extends TestCase
         $sql = User::whereHas('posts')->toSql();
 
         $this->assertStringContainsString('exists(', $sql);
-        $this->assertStringContainsString('FROM wp_posts', $sql);
+        $this->assertStringContainsString('FROM `wp_posts`', $sql);
         $this->assertStringContainsString('`wp_users`.`id`=`wp_posts`.`user_id`', $sql);
     }
 

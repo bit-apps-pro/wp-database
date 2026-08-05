@@ -33,7 +33,7 @@ class Grammar
         }, $query->select);
         $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
         $sql .= $this->prepareRawSelect($query);
-        $sql .= ' FROM ' . $query->getTable();
+        $sql .= ' FROM ' . Identifier::quoteQualified($query->getTable());
         $sql .= $this->getFrom($query);
         $sql .= $this->getJoin($query);
         $sql .= $this->getWhere($query);
@@ -75,8 +75,12 @@ class Grammar
         }
 
         foreach ($joins as $join) {
-            $sql .= ' ' . $join['type'] . ' JOIN ' . $join['table']
-                . ' ON ' . $this->processConditions($query, $join['on']);
+            $sql .= ' ' . JoinType::normalize($join['type']) . ' JOIN '
+                . Identifier::quoteQualified($join['table']);
+            if ($join['userAlias'] !== null) {
+                $sql .= ' AS ' . Identifier::quoteAlias($join['userAlias']);
+            }
+            $sql .= ' ON ' . $this->processConditions($query, $join['on']);
         }
 
         return $sql;
@@ -205,7 +209,7 @@ class Grammar
     {
         $alias = $query->getFromAlias();
 
-        return isset($alias) ? " {$alias}" : null;
+        return isset($alias) ? ' ' . Identifier::quoteAlias($alias) : null;
     }
 
     /**
@@ -282,13 +286,13 @@ class Grammar
         }
 
         if (isset($clause['operator'])) {
-            $sql .= ' ' . $clause['operator'];
+            $sql .= ' ' . SqlOperator::normalize($clause['operator']);
         } elseif (\is_array($clause['value'])) {
-            $sql .= ' IN ';
+            $sql .= ' ' . SqlOperator::normalize('IN') . ' ';
         } elseif (\is_null($clause['value'])) {
-            $sql = ' IS NULL';
+            $sql = ' ' . SqlOperator::normalize('IS NULL');
         } else {
-            $sql .= ' = ';
+            $sql .= ' ' . SqlOperator::normalize('=') . ' ';
         }
 
         return $sql;
@@ -305,11 +309,14 @@ class Grammar
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
-            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$/', $clause['secondColumn'])) {
-                return ' ' . $query->renderIdentifier($clause['secondColumn']);
-            }
+            return ' ' . $query->renderIdentifier($clause['secondColumn']);
+        }
 
-            return ' ' . $clause['secondColumn'];
+        if (isset($clause['between'])) {
+            [$start, $end] = $clause['between'];
+            $query->addBindings([$start, $end]);
+
+            return ' ' . $query->getValueType($start) . ' AND ' . $query->getValueType($end);
         }
 
         if (!isset($clause['value'])) {
@@ -324,11 +331,6 @@ class Grammar
             }
 
             $sql = rtrim($sql, ',') . ')';
-        } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') !== false) {
-            $sql .= ' ' . $clause['value'];
-        } elseif (isset($clause['operator']) && strtoupper($clause['operator']) === 'LIKE') {
-            $sql .= ' %s';
-            $query->addBindings($clause['value']);
         } elseif (!\is_null($clause['value'])) {
             $sql .= ' ' . $query->getValueType($clause['value']);
             $query->addBindings($clause['value']);

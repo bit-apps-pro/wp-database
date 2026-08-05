@@ -27,7 +27,7 @@ final class BuilderEntryTest extends TestCase
     {
         $sql = User::query()->where('id', 1)->toSql();
 
-        $this->assertStringContainsString('FROM wp_users', $sql);
+        $this->assertStringContainsString('FROM `wp_users`', $sql);
         $this->assertStringContainsString('WHERE', $sql);
     }
 
