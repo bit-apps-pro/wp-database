@@ -59,7 +59,6 @@ use RuntimeException;
  * @method static QueryBuilder                  joinWhere($table, $first_column, $operator, $value, $type = 'INNER')
  * @method static QueryBuilder                  leftJoin($table, $first_column, $operator = null, $second_column = null)
  * @method static QueryBuilder                  rightJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                  fullJoin($table, $first_column, $operator = null, $second_column = null)
  * @method static QueryBuilder                  crossJoin($table, $first_column, $operator = null, $second_column = null)
  * @method static QueryBuilder                  onValue($first_column, $operator, $value, $bool = 'AND')
  * @method static QueryBuilder                  orOnValue($first_column, $operator, $value)

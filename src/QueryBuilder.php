@@ -723,7 +723,7 @@ class QueryBuilder
 
         $this->where[] = [
             'column'   => $column,
-            'operator' => SqlOperator::normalize('BETWEEN'),
+            'operator' => SqlOperator::normalizeRange('BETWEEN'),
             'between'  => [$start, $end],
         ];
 
@@ -745,7 +745,7 @@ class QueryBuilder
 
         $this->where[] = [
             'column'   => $column,
-            'operator' => SqlOperator::normalize('BETWEEN'),
+            'operator' => SqlOperator::normalizeRange('BETWEEN'),
             'between'  => [$start, $end],
             'bool'     => 'OR',
         ];
@@ -1012,7 +1012,9 @@ class QueryBuilder
         Identifier::quoteQualified($column, $allowWildcard);
 
         if (\count($segments) === 1) {
-            return Identifier::quoteQualified($this->table . '.' . $column, $allowWildcard);
+            $baseReference = $this->_from ?? $this->table;
+
+            return Identifier::quoteQualified($baseReference . '.' . $column, $allowWildcard);
         }
 
         [$qualifier, $name] = $segments;
@@ -1877,7 +1879,7 @@ class QueryBuilder
 
         $this->assertSafeIdentifier($column);
         $this->assertSafeIdentifier($secondColumn);
-        $operator = SqlOperator::normalize($operator);
+        $operator = SqlOperator::normalizeBinary($operator);
         $bool     = $this->normalizeBoolean($bool);
 
         if (strpos($secondColumn, '.') === false) {
@@ -1899,7 +1901,7 @@ class QueryBuilder
             throw new RuntimeException('Join values must be scalar or null.');
         }
 
-        $operator = SqlOperator::normalize($operator);
+        $operator = SqlOperator::normalizeBinary($operator);
         $bool     = $this->normalizeBoolean($bool);
         if (\is_null($value)) {
             $operator = $this->nullOperator($operator);
@@ -2019,7 +2021,7 @@ class QueryBuilder
         }
 
         if (isset($conditions['operator'])) {
-            $conditions['operator'] = SqlOperator::normalize($conditions['operator']);
+            $conditions['operator'] = SqlOperator::normalizeBinary($conditions['operator']);
         }
 
         if ($type !== 'where' || !\array_key_exists('value', $conditions)) {
@@ -2041,9 +2043,12 @@ class QueryBuilder
 
         if (\is_null($value)) {
             if (isset($conditions['operator'])) {
-                unset($conditions['value']);
                 $conditions['operator'] = $this->nullOperator($conditions['operator']);
+            } else {
+                $conditions['operator'] = 'IS NULL';
             }
+
+            unset($conditions['value']);
 
             return $conditions;
         }
@@ -2101,7 +2106,7 @@ class QueryBuilder
     private function assertSafeIdentifier($column)
     {
         if (!\is_string($column)) {
-            throw new RuntimeException('Unsafe column passed to order/group by clause.');
+            throw new RuntimeException('Invalid structured SQL identifier.');
         }
 
         Identifier::quoteQualified($column);
@@ -2327,16 +2332,20 @@ class QueryBuilder
      */
     private function prepareUpdate()
     {
+        $setBindings    = $this->bindings;
+        $this->bindings = [];
+
         $sql = 'UPDATE ' . $this->table;
         $sql .= $this->grammar()->getJoin($this);
         $sql .= ' SET ';
         $columnCount = \count($this->update);
         foreach ($this->update as $key => $column) {
-            if (\is_null($this->bindings[$key])) {
+            $value = $setBindings[$key];
+            if (\is_null($value)) {
                 $sql .= $column . ' = NULL';
-                unset($this->bindings[$key]);
             } else {
-                $sql .= $column . ' = ' . $this->getValueType($this->bindings[$key]);
+                $sql .= $column . ' = ' . $this->getValueType($value);
+                $this->addBindings($value);
             }
 
             if ($key < $columnCount - 1) {

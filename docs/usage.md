@@ -272,7 +272,7 @@ Contact::query()
     ->join('orders', 'orders.contact_id', '=', 'contacts.id')
     ->leftJoin('notes', 'notes.contact_id', '=', 'contacts.id')
     ->get();
-// also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
+// also: rightJoin(), crossJoin(), on(), orOn()
 
 // Compare a join column with bound values (never interpolated as SQL).
 Contact::query()
@@ -301,6 +301,9 @@ join alias and `from('alias')` for the base-table alias.
 `join()`, `on()`, and `orOn()` are column-to-column APIs. They no longer guess
 whether the right operand is a number, quoted literal, or SQL function. Move
 constants to `joinWhere()` / `onValue()` and reviewed expressions to `onRaw()`.
+`crossJoin()` keeps this builder's four-operand conditional form and emits
+`CROSS JOIN ... ON ...`, which MySQL accepts as an inner-join synonym; it does
+not create an unqualified Cartesian product.
 
 ### Limit / offset / pagination
 

@@ -33,18 +33,30 @@ final class StructuredClauseSafetyTest extends TestCase
             'less or equal'      => ['<=', '<='],
             'like'               => ['like', 'LIKE'],
             'not like'           => ['not like', 'NOT LIKE'],
-            'in'                 => ['in', 'IN'],
-            'not in'             => ['not in', 'NOT IN'],
-            'is null'            => ['is null', 'IS NULL'],
-            'is not null'        => ['is not null', 'IS NOT NULL'],
-            'between'            => ['between', 'BETWEEN'],
         ];
     }
 
     #[DataProvider('operatorProvider')]
     public function testNormalizesFiniteOperatorSet(string $input, string $expected): void
     {
-        $this->assertSame($expected, SqlOperator::normalize($input));
+        $this->assertSame($expected, SqlOperator::normalizeBinary($input));
+    }
+
+    public static function specializedOperatorProvider(): array
+    {
+        return [
+            'list'           => ['normalizeList', 'in', 'IN'],
+            'negative list'  => ['normalizeList', 'not in', 'NOT IN'],
+            'unary'          => ['normalizeUnary', 'is null', 'IS NULL'],
+            'negative unary' => ['normalizeUnary', 'is not null', 'IS NOT NULL'],
+            'range'          => ['normalizeRange', 'between', 'BETWEEN'],
+        ];
+    }
+
+    #[DataProvider('specializedOperatorProvider')]
+    public function testNormalizesOperatorsOnlyWithinTheirShape(string $method, string $input, string $expected): void
+    {
+        $this->assertSame($expected, SqlOperator::{$method}($input));
     }
 
     public static function invalidOperatorProvider(): array
@@ -67,7 +79,7 @@ final class StructuredClauseSafetyTest extends TestCase
     {
         $this->expectException(RuntimeException::class);
 
-        SqlOperator::normalize($operator);
+        SqlOperator::normalizeBinary($operator);
     }
 
     public static function joinTypeProvider(): array
@@ -76,7 +88,6 @@ final class StructuredClauseSafetyTest extends TestCase
             'inner' => ['inner', 'INNER'],
             'left'  => ['left', 'LEFT'],
             'right' => ['right', 'RIGHT'],
-            'full'  => ['full', 'FULL'],
             'cross' => ['cross', 'CROSS'],
         ];
     }
@@ -92,6 +103,7 @@ final class StructuredClauseSafetyTest extends TestCase
         return [
             'empty'               => [''],
             'unsupported'         => ['NATURAL'],
+            'mysql unsupported'   => ['FULL'],
             'outer smuggling'     => ['LEFT OUTER'],
             'comment'             => ['LEFT/**/'],
             'leading whitespace'  => [' LEFT'],
@@ -287,5 +299,121 @@ final class StructuredClauseSafetyTest extends TestCase
                 . ' ON  `p`.`user_id` = `u`.`id`',
             User::query()->from('u')->join('posts AS p', 'p.user_id', '=', 'u.id')->select('u.id')->toSql()
         );
+    }
+
+    public static function incompatibleOperatorShapeProvider(): array
+    {
+        return [
+            'where unary with value' => [static function (): void {
+                User::query()->where('id', 'IS NULL', 1)->get();
+            }],
+            'where range with scalar' => [static function (): void {
+                User::query()->where('id', 'BETWEEN', 1)->get();
+            }],
+            'where list through binary API' => [static function (): void {
+                User::query()->where('id', 'IN', [1, 2])->get();
+            }],
+            'having unary with value' => [static function (): void {
+                User::query()->having('id', 'IS NOT NULL', 1)->get();
+            }],
+            'having range with scalar' => [static function (): void {
+                User::query()->having('id', 'BETWEEN', 1)->get();
+            }],
+            'join list with columns' => [static function (): void {
+                User::query()->join('posts', 'posts.user_id', 'IN', 'users.id')->get();
+            }],
+            'join unary with columns' => [static function (): void {
+                User::query()->join('posts', 'posts.user_id', 'IS NULL', 'users.id')->get();
+            }],
+            'on range with columns' => [static function (): void {
+                User::query()->join('posts', 'posts.user_id', '=', 'users.id')
+                    ->on('posts.score', 'BETWEEN', 'users.score')->get();
+            }],
+        ];
+    }
+
+    #[DataProvider('incompatibleOperatorShapeProvider')]
+    public function testBinaryApisRejectIncompatibleOperatorShapesBeforeExecution(callable $attempt): void
+    {
+        try {
+            $attempt();
+            $this->fail('Expected the binary API to reject a non-binary operator.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame([], $GLOBALS['wpdb']->queries);
+        }
+    }
+
+    public function testFullJoinIsRejectedBecauseMysqlDoesNotSupportIt(): void
+    {
+        try {
+            User::query()->fullJoin('posts', 'posts.user_id', '=', 'users.id')->get();
+            $this->fail('Expected FULL JOIN to be rejected.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame([], $GLOBALS['wpdb']->queries);
+        }
+    }
+
+    public function testBaseAliasQualifiesEveryStructuredBareColumnPath(): void
+    {
+        $sql = User::query()->from('u')
+            ->select('id')
+            ->where('status', 'active')
+            ->groupBy('role')
+            ->having('score', '>', 10)
+            ->orderBy('created_at')
+            ->toSql();
+
+        $this->assertStringContainsString('SELECT `u`.`id`', $sql);
+        $this->assertStringContainsString('WHERE  `u`.`status`', $sql);
+        $this->assertStringContainsString('GROUP BY `u`.`role`', $sql);
+        $this->assertStringContainsString('HAVING  `u`.`score`', $sql);
+        $this->assertStringContainsString('ORDER BY `u`.`created_at`', $sql);
+        $this->assertStringNotContainsString('`wp_users`.`', $sql);
+    }
+
+    public function testBaseAliasQualifiesAggregateColumn(): void
+    {
+        $GLOBALS['wpdb']->resolver = static function () {
+            return [(object) ['MAX' => 20]];
+        };
+
+        User::query()->from('u')->max('score');
+
+        $this->assertStringContainsString('MAX(`u`.`score`)', $GLOBALS['wpdb']->last_query);
+    }
+
+    public function testUpdateJoinWhereRendersBindingsInPlaceholderOrder(): void
+    {
+        User::query()->joinWhere('posts', 'posts.status', '=', 'active')
+            ->where('users.id', 7)
+            ->update(['status' => 'archived']);
+
+        $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
+    }
+
+    public function testUpdateOnValueRendersBindingsInPlaceholderOrder(): void
+    {
+        User::query()->join('posts', 'posts.user_id', '=', 'users.id')
+            ->onValue('posts.status', '=', 'active')
+            ->where('users.id', 7)
+            ->update(['status' => 'archived']);
+
+        $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
+    }
+
+    public function testUpdateOnRawRendersBindingsInPlaceholderOrder(): void
+    {
+        User::query()->join('posts', 'posts.user_id', '=', 'users.id')
+            ->onRaw('`wp_posts`.`status` = %s', ['active'])
+            ->where('users.id', 7)
+            ->update(['status' => 'archived']);
+
+        $this->assertStringContainsString("`wp_posts`.`status` = 'active'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString("SET status = 'archived'", $GLOBALS['wpdb']->last_query);
+        $this->assertStringContainsString('`wp_users`.`id` =  7', $GLOBALS['wpdb']->last_query);
     }
 }

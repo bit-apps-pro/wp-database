@@ -14,7 +14,6 @@ final class JoinType
         'INNER',
         'LEFT',
         'RIGHT',
-        'FULL',
         'CROSS',
     ];
 

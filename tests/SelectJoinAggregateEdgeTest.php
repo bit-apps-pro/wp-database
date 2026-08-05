@@ -76,10 +76,9 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     // --- Joins ---------------------------------------------------------------
 
-    public function testRightFullCrossJoinKeywords(): void
+    public function testRightAndCrossJoinKeywords(): void
     {
         $this->assertStringContainsString('RIGHT JOIN `wp_posts`', (new User())->rightJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
-        $this->assertStringContainsString('FULL JOIN `wp_posts`', (new User())->fullJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
         $this->assertStringContainsString('CROSS JOIN `wp_posts`', (new User())->crossJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
     }
 

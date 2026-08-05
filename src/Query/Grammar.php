@@ -285,14 +285,22 @@ class Grammar
             return $sql;
         }
 
-        if (isset($clause['operator'])) {
-            $sql .= ' ' . SqlOperator::normalize($clause['operator']);
+        if (isset($clause['between'])) {
+            $sql .= ' ' . SqlOperator::normalizeRange($clause['operator']);
+        } elseif (isset($clause['secondColumn'])) {
+            $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
+        } elseif (!\array_key_exists('value', $clause)) {
+            $sql .= ' ' . SqlOperator::normalizeUnary($clause['operator']);
         } elseif (\is_array($clause['value'])) {
-            $sql .= ' ' . SqlOperator::normalize('IN') . ' ';
-        } elseif (\is_null($clause['value'])) {
-            $sql = ' ' . SqlOperator::normalize('IS NULL');
+            if (isset($clause['operator'])) {
+                $sql .= ' ' . SqlOperator::normalizeList($clause['operator']);
+            } else {
+                $sql .= ' ' . SqlOperator::normalizeList('IN') . ' ';
+            }
+        } elseif (isset($clause['operator'])) {
+            $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
         } else {
-            $sql .= ' ' . SqlOperator::normalize('=') . ' ';
+            $sql .= ' ' . SqlOperator::normalizeBinary('=') . ' ';
         }
 
         return $sql;

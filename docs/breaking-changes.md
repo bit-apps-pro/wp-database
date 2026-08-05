@@ -381,6 +381,8 @@ Migrate constants to the bound-value APIs and expressions to the explicit raw AP
 
 `whereBetween()` and `orWhereBetween()` now retain structured column state and
 bind both bounds; hostile column text can no longer enter their SQL fragment.
+`FULL JOIN` is rejected because MySQL does not support it; use supported
+`INNER`, `LEFT`, `RIGHT`, or `CROSS` joins with a valid ON condition.
 
 ---
 
