@@ -38,6 +38,15 @@ class QueryBuilder
         'bindings' => [],
     ];
 
+    /**
+     * Framework-generated SELECT expressions whose structural parts remain
+     * typed until Grammar compilation. Developer-authored expressions belong
+     * in selectRaw().
+     *
+     * @var array<int, array>
+     */
+    protected $selectExpressions = [];
+
     protected $table;
 
     protected $limit;
@@ -411,10 +420,11 @@ class QueryBuilder
      */
     public function prepareKeySubquery($keyColumn): string
     {
-        $clone            = clone $this;
-        $clone->selectRaw = ['columns' => [], 'bindings' => []];
-        $clone->groupBy   = [];
-        $clone->having    = [];
+        $clone                    = clone $this;
+        $clone->selectRaw         = ['columns' => [], 'bindings' => []];
+        $clone->selectExpressions = [];
+        $clone->groupBy           = [];
+        $clone->having            = [];
         if (!isset($clone->limit)) {
             $clone->orderBy = [];
         }
@@ -439,6 +449,66 @@ class QueryBuilder
             }
             $this->select[] = $column;
         }
+
+        return $this;
+    }
+
+    /**
+     * Returns framework-generated structured SELECT expressions.
+     *
+     * @return array<int, array>
+     */
+    public function getSelectExpressions()
+    {
+        return $this->selectExpressions;
+    }
+
+    /**
+     * Adds an aggregate SELECT expression without routing its identifier
+     * through the raw SQL channel.
+     *
+     * @param mixed       $function
+     * @param mixed       $column
+     * @param null|string $alias
+     *
+     * @return $this
+     */
+    private function addAggregateSelect($function, $column, $alias = null)
+    {
+        $this->assertSafeAggregateFunction($function);
+        if ($column !== '*') {
+            $this->assertSafeIdentifier($column);
+        }
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        $this->selectExpressions[] = [
+            'type'     => 'aggregate',
+            'function' => $function,
+            'column'   => $column,
+            'alias'    => $alias,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds a relation subquery SELECT expression with a validated output alias.
+     * The nested builder remains structured until Grammar compilation.
+     *
+     * @return $this
+     */
+    private function addSubquerySelect(QueryBuilder $query, string $alias, $exists = false)
+    {
+        Identifier::assertSimple($alias);
+
+        $this->selectExpressions[] = [
+            'type'   => 'subquery',
+            'query'  => $query,
+            'alias'  => $alias,
+            'exists' => (bool) $exists,
+        ];
 
         return $this;
     }
@@ -1496,12 +1566,13 @@ class QueryBuilder
     {
         $this->assertSafeAggregateFunction($function);
 
-        $query            = $this->clone();
-        $query->select    = [];
-        $query->selectRaw = ['columns' => [], 'bindings' => []];
-        $query->distinct  = false;
-        $preparedColumn   = $column === '*' ? '*' : $query->prepareColumnName($column);
-        $result           = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
+        $query                    = $this->clone();
+        $query->select            = [];
+        $query->selectRaw         = ['columns' => [], 'bindings' => []];
+        $query->selectExpressions = [];
+        $query->distinct          = false;
+        $preparedColumn           = $column === '*' ? '*' : $query->prepareColumnName($column);
+        $result                   = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
 
         return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
@@ -1649,7 +1720,7 @@ class QueryBuilder
 
                     break;
             }
-        } elseif (!empty($this->select) || !empty($this->selectRaw)) {
+        } elseif (!empty($this->select) || !empty($this->selectExpressions) || !empty($this->selectRaw)) {
             $this->_method = self::SELECT;
             $sql           = $this->grammar()->compileSelect($this);
         }

@@ -31,8 +31,14 @@ class Grammar
         $columns = array_map(static function ($column) use ($query) {
             return $query->renderIdentifier($column, true, true);
         }, $query->select);
-        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
-        $sql .= $this->prepareRawSelect($query);
+        $structuredSql = implode(',', $columns);
+        foreach ($query->getSelectExpressions() as $expression) {
+            $structuredSql .= $structuredSql === '' ? '' : ', ';
+            $structuredSql .= $this->prepareSelectExpression($query, $expression);
+        }
+
+        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . $structuredSql;
+        $sql .= $this->prepareRawSelect($query, $structuredSql !== '');
         $sql .= ' FROM ' . Identifier::quoteQualified($query->getTable());
         $sql .= $this->getFrom($query);
         $sql .= $this->getJoin($query);
@@ -242,11 +248,11 @@ class Grammar
      *
      * @return string
      */
-    private function prepareRawSelect(QueryBuilder $query)
+    private function prepareRawSelect(QueryBuilder $query, $hasStructuredSelect = false)
     {
         $sql = '';
         if (!empty($query->selectRaw['columns'])) {
-            $sql = \count($query->select) ? ', ' : '';
+            $sql = $hasStructuredSelect ? ', ' : '';
             $sql .= implode(', ', $query->selectRaw['columns']);
         }
 
@@ -255,6 +261,35 @@ class Grammar
         }
 
         return $sql;
+    }
+
+    /**
+     * Compiles a framework-generated SELECT expression from typed state.
+     *
+     * @param array $expression
+     *
+     * @return string
+     */
+    private function prepareSelectExpression(QueryBuilder $query, array $expression)
+    {
+        if ($expression['type'] === 'aggregate') {
+            $column = $expression['column'] === '*'
+                ? '*'
+                : $query->renderIdentifier($expression['column']);
+            $sql = $expression['function'] . '(' . $column . ')';
+            if ($expression['alias'] !== null) {
+                $sql .= ' AS ' . Identifier::quoteAlias($expression['alias']);
+            }
+
+            return $sql;
+        }
+
+        $subquery = $expression['query'];
+        $sql      = $subquery->toSql();
+        $query->addBindings($subquery->getBindings());
+        $sql = $expression['exists'] ? 'exists(' . $sql . ')' : '(' . $sql . ')';
+
+        return $sql . ' as ' . Identifier::quoteAlias($expression['alias']);
     }
 
     /**
