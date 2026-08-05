@@ -6,6 +6,7 @@ use BitApps\WPDatabase\Concerns\QueriesRelationships;
 use BitApps\WPDatabase\Query\Grammar;
 use BitApps\WPDatabase\Query\Identifier;
 use BitApps\WPDatabase\Query\JoinType;
+use BitApps\WPDatabase\Query\RawTemplate;
 use BitApps\WPDatabase\Query\SqlOperator;
 
 use Closure;
@@ -1360,14 +1361,47 @@ class QueryBuilder
     }
 
     /**
-     * Runs raw query
+     * Runs a constrained, developer-authored SQL template.
+     *
+     * Dynamic values must use wpdb placeholders. Dynamic identifiers and sort
+     * directions must use typed markers and exactly matching maps. Request data
+     * must never supply the template itself.
+     *
+     * @return mixed
+     */
+    public function rawPrepared(
+        string $template,
+        array $bindings = [],
+        array $identifiers = [],
+        array $directions = []
+    ) {
+        $sql = RawTemplate::compile($template, $bindings, $identifiers, $directions);
+
+        if ($bindings === []) {
+            $sql = str_replace('%%', '%', $sql);
+        } else {
+            $prepared = Connection::prepare($sql, $bindings);
+            if (!\is_string($prepared) || $prepared === '') {
+                throw new RuntimeException('SQL query preparation failed.');
+            }
+            $sql = $prepared;
+        }
+
+        return $this->unsafeRaw($sql);
+    }
+
+    /**
+     * Runs reviewed, fully developer-controlled SQL through the legacy path.
+     *
+     * Bind every dynamic value. Request data must never be interpolated into
+     * the SQL string.
      *
      * @param string $sql
      * @param array  $bindings
      *
      * @return mixed
      */
-    public function raw($sql, $bindings = [])
+    public function unsafeRaw(string $sql, array $bindings = [])
     {
         $this->_method  = self::RAW;
         $this->raw      = $sql;
@@ -1383,6 +1417,22 @@ class QueryBuilder
         unset($this->_method);
 
         return $result;
+    }
+
+    /**
+     * Runs raw SQL through the legacy unsafe implementation.
+     *
+     * @deprecated Use rawPrepared() for typed templates or unsafeRaw() for
+     *             reviewed, fully developer-controlled legacy SQL.
+     *
+     * @param string $sql
+     * @param array  $bindings
+     *
+     * @return mixed
+     */
+    public function raw($sql, $bindings = [])
+    {
+        return $this->unsafeRaw($sql, $bindings);
     }
 
     public function prepareRaw()
