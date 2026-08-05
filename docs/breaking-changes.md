@@ -162,6 +162,12 @@ column and keeps the alias separate, so `->select(['id', 'title AS t'])` emits
 ->selectRaw('SUM(amount) as amt', $bindings)
 ```
 
+Projection order is channel-based rather than call-based: structured
+`select()` / `addSelect()` columns compile first, generated relation
+aggregate/existence columns compile next, and `selectRaw()` expressions compile
+last. Calling these methods in another order does not interleave the resulting
+columns.
+
 ---
 
 ### 2.5 `delete()` with no `WHERE` clause no longer wipes the table

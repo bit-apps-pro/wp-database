@@ -10,6 +10,7 @@ use BitApps\WPDatabase\Model;
 use BitApps\WPDatabase\Query\Identifier;
 use BitApps\WPDatabase\QueryBuilder;
 use Closure;
+use ReflectionMethod;
 use RuntimeException;
 
 if (!\defined('ABSPATH')) {
@@ -24,7 +25,9 @@ trait Relations
 
     private $_relationKeys = [];
 
-    /** Memoized framework-vs-consumer verdict per "class::method". */
+    /**
+     * Memoized framework-vs-consumer verdict per "class::method".
+     */
     private static $relationMethodCache = [];
 
     /**
@@ -272,6 +275,23 @@ trait Relations
         return $preparedRelation;
     }
 
+    public function prepareRelationName(string $relationName): array
+    {
+        $parts = preg_split('/\s+as\s+/i', $relationName);
+        if ($parts === false || \count($parts) > 2) {
+            throw new RuntimeException('Invalid relation name or alias.');
+        }
+
+        $name  = $parts[0];
+        $alias = isset($parts[1]) ? $parts[1] : null;
+        $this->assertSimpleRelationIdentifier($name);
+        if ($alias !== null) {
+            $this->assertSimpleRelationIdentifier($alias);
+        }
+
+        return [$name, $alias];
+    }
+
     /**
      * Resolves an existing method name to its relation query, or fails loudly.
      *
@@ -312,12 +332,12 @@ trait Relations
      */
     private function isFrameworkModelMethod($method)
     {
-        $cacheKey = \get_class($this) . '::' . $method;
+        $cacheKey = static::class . '::' . $method;
         if (isset(self::$relationMethodCache[$cacheKey])) {
             return self::$relationMethodCache[$cacheKey];
         }
 
-        $declaringClass = (new \ReflectionMethod($this, $method))->getDeclaringClass()->getName();
+        $declaringClass = (new ReflectionMethod($this, $method))->getDeclaringClass()->getName();
 
         return self::$relationMethodCache[$cacheKey] = $declaringClass === Model::class;
     }
@@ -347,24 +367,7 @@ trait Relations
 
     private function undefinedRelationMessage($method)
     {
-        return 'Relation [' . $method . '] is not defined on [' . \get_class($this) . '].';
-    }
-
-    public function prepareRelationName(string $relationName): array
-    {
-        $parts = preg_split('/\s+as\s+/i', $relationName);
-        if ($parts === false || \count($parts) > 2) {
-            throw new RuntimeException('Invalid relation name or alias.');
-        }
-
-        $name  = $parts[0];
-        $alias = isset($parts[1]) ? $parts[1] : null;
-        $this->assertSimpleRelationIdentifier($name);
-        if ($alias !== null) {
-            $this->assertSimpleRelationIdentifier($alias);
-        }
-
-        return [$name, $alias];
+        return 'Relation [' . $method . '] is not defined on [' . static::class . '].';
     }
 
     /**

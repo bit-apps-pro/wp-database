@@ -215,6 +215,12 @@ Contact::selectRaw('SUM(amount) as amt', [])->get();
 > `select()` handles plain columns and `column AS alias`, back-tick-quoting them
 > as identifiers. Pass raw SQL expressions or function calls (`COUNT(*)`, …) to
 > `selectRaw()` instead.
+>
+> Projection channels compile in a stable order regardless of call order:
+> structured `select()` / `addSelect()` columns first, framework-generated
+> relation aggregate/existence columns next, and `selectRaw()` expressions last.
+> Do not rely on method-call order to position a raw expression between generated
+> relation columns.
 
 ### Where
 

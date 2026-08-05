@@ -307,7 +307,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->table;
     }
 
-    /** Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix). */
+    /**
+     * Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix).
+     */
     public function getPrefix()
     {
         return $this->prefix === '' ? Connection::getPrefix() : $this->prefix;

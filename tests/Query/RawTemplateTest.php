@@ -269,6 +269,17 @@ final class RawTemplateTest extends TestCase
         $this->assertSame(['SELECT 100 % 7'], $wpdb->queries);
     }
 
+    public function testRawPreparedBindsAValueAndUnescapesALiteralPercent(): void
+    {
+        $wpdb            = new RawTemplateTrackingWpdb();
+        $GLOBALS['wpdb'] = $wpdb;
+
+        User::query()->rawPrepared('SELECT %d, 100 %% 7', [7]);
+
+        $this->assertSame(1, $wpdb->prepareCalls);
+        $this->assertSame(['SELECT 7, 100 % 7'], $wpdb->queries);
+    }
+
     public function testRawPreparedRejectsBeforePrepareOrExecution(): void
     {
         $wpdb            = new RawTemplateTrackingWpdb();

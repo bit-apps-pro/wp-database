@@ -246,6 +246,8 @@ class Grammar
     /**
      * Compiles the raw select columns and merges their bindings.
      *
+     * @param mixed $hasStructuredSelect
+     *
      * @return string
      */
     private function prepareRawSelect(QueryBuilder $query, $hasStructuredSelect = false)

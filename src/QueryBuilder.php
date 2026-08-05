@@ -465,56 +465,6 @@ class QueryBuilder
     }
 
     /**
-     * Adds an aggregate SELECT expression without routing its identifier
-     * through the raw SQL channel.
-     *
-     * @param mixed       $function
-     * @param mixed       $column
-     * @param null|string $alias
-     *
-     * @return $this
-     */
-    private function addAggregateSelect($function, $column, $alias = null)
-    {
-        $this->assertSafeAggregateFunction($function);
-        if ($column !== '*') {
-            $this->assertSafeIdentifier($column);
-        }
-        if ($alias !== null) {
-            Identifier::assertSimple($alias);
-        }
-
-        $this->selectExpressions[] = [
-            'type'     => 'aggregate',
-            'function' => $function,
-            'column'   => $column,
-            'alias'    => $alias,
-        ];
-
-        return $this;
-    }
-
-    /**
-     * Adds a relation subquery SELECT expression with a validated output alias.
-     * The nested builder remains structured until Grammar compilation.
-     *
-     * @return $this
-     */
-    private function addSubquerySelect(QueryBuilder $query, string $alias, $exists = false)
-    {
-        Identifier::assertSimple($alias);
-
-        $this->selectExpressions[] = [
-            'type'   => 'subquery',
-            'query'  => $query,
-            'alias'  => $alias,
-            'exists' => (bool) $exists,
-        ];
-
-        return $this;
-    }
-
-    /**
      * Selects raw query as column for query
      *
      * @param string $column
@@ -928,6 +878,12 @@ class QueryBuilder
     /**
      * Joins a table using a bound scalar value as the right-hand operand.
      *
+     * @param mixed $table
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $type
+     *
      * @return $this
      */
     public function joinWhere($table, $firstColumn, $operator, $value, $type = 'INNER')
@@ -942,54 +898,6 @@ class QueryBuilder
             $this->prepareOnValue($firstColumn, $operator, $value),
             $type
         );
-    }
-
-    /**
-     * Parses a structured join table declaration with an optional explicit
-     * `AS` alias. Both identifiers remain logical state until compilation.
-     *
-     * @return array{string, null|string, string, string}
-     */
-    private function parseJoinTable($table)
-    {
-        if (!\is_string($table)
-            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
-        ) {
-            throw new RuntimeException('Invalid SQL join table declaration.');
-        }
-
-        $rawTable      = $matches[1];
-        $alias         = isset($matches[2]) ? $matches[2] : null;
-        $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
-        $reference     = $alias !== null ? $alias : $prefixedTable;
-
-        Identifier::assertSimple($rawTable);
-        Identifier::assertSimple($prefixedTable);
-        if ($alias !== null) {
-            Identifier::assertSimple($alias);
-        }
-
-        return [$rawTable, $alias, $prefixedTable, $reference];
-    }
-
-    /**
-     * Stores one validated join and its first ON condition.
-     *
-     * @return $this
-     */
-    private function storeJoin($rawTable, $alias, $prefixedTable, $reference, array $on, $type)
-    {
-        $this->joins[] = [
-            'table'     => $prefixedTable,
-            'alias'     => $reference,
-            'on'        => [$on],
-            'type'      => JoinType::normalize($type),
-            'raw'       => $rawTable,
-            'prefixed'  => $prefixedTable,
-            'userAlias' => $alias,
-        ];
-
-        return $this;
     }
 
     /**
@@ -1106,24 +1014,6 @@ class QueryBuilder
     }
 
     /**
-     * Creates a nested builder that compiles its conditions inside this query's
-     * table context: it shares the model (via newQuery()) plus this query's
-     * joins and from() alias, so resolveQualifier() inside a nested where group
-     * resolves joined-table qualifiers exactly as at top level. The joins stay
-     * inert — a nested builder compiles only its conditions, never JOIN SQL.
-     *
-     * @return QueryBuilder
-     */
-    private function newNestedQuery()
-    {
-        $query        = $this->newQuery();
-        $query->joins = $this->joins;
-        $query->_from = $this->_from;
-
-        return $query;
-    }
-
-    /**
      * Sets left join
      *
      * @param string $table
@@ -1223,6 +1113,11 @@ class QueryBuilder
     /**
      * Adds an ON condition whose right-hand operand is a bound scalar value.
      *
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
      * @return $this
      */
     public function onValue($firstColumn, $operator, $value, $bool = 'AND')
@@ -1240,6 +1135,10 @@ class QueryBuilder
     /**
      * Adds an OR ON condition whose right-hand operand is a bound scalar value.
      *
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     *
      * @return $this
      */
     public function orOnValue($firstColumn, $operator, $value)
@@ -1250,6 +1149,9 @@ class QueryBuilder
     /**
      * Adds an explicitly raw ON condition. The SQL must be developer-authored;
      * dynamic values belong in placeholders and $bindings.
+     *
+     * @param mixed $sql
+     * @param mixed $bool
      *
      * @return $this
      */
@@ -1275,6 +1177,8 @@ class QueryBuilder
 
     /**
      * Adds an explicitly raw OR ON condition.
+     *
+     * @param mixed $sql
      *
      * @return $this
      */
@@ -1644,23 +1548,6 @@ class QueryBuilder
         return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
     }
 
-    /**
-     * Guards an aggregate function name that is interpolated straight into SQL:
-     * only a bare identifier is allowed, so parens/spaces/semicolons cannot
-     * smuggle in a payload. Case is preserved (SQL function names are
-     * case-insensitive).
-     *
-     * @param mixed $function
-     *
-     * @return void
-     */
-    private function assertSafeAggregateFunction($function)
-    {
-        if (!\is_string($function) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
-            throw new RuntimeException('Invalid aggregate function name.');
-        }
-    }
-
     public function delete()
     {
         $this->_method = self::DELETE;
@@ -2008,6 +1895,11 @@ class QueryBuilder
     /**
      * Prepares a join condition with a bound right-hand value.
      *
+     * @param mixed $column
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
      * @return array
      */
     protected function prepareOnValue($column, $operator, $value, $bool = 'AND')
@@ -2057,10 +1949,153 @@ class QueryBuilder
             $absHour = abs($hours);
             $absMins = abs($minutes * 60);
 
-            $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
+            $timezoneString = \sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
         return $timezoneString;
+    }
+
+    /**
+     * Adds an aggregate SELECT expression without routing its identifier
+     * through the raw SQL channel.
+     *
+     * @param mixed       $function
+     * @param mixed       $column
+     * @param null|string $alias
+     *
+     * @return $this
+     */
+    private function addAggregateSelect($function, $column, $alias = null)
+    {
+        $this->assertSafeAggregateFunction($function);
+        if ($column !== '*') {
+            $this->assertSafeIdentifier($column);
+        }
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        $this->selectExpressions[] = [
+            'type'     => 'aggregate',
+            'function' => $function,
+            'column'   => $column,
+            'alias'    => $alias,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds a relation subquery SELECT expression with a validated output alias.
+     * The nested builder remains structured until Grammar compilation.
+     *
+     * @param mixed $exists
+     *
+     * @return $this
+     */
+    private function addSubquerySelect(QueryBuilder $query, string $alias, $exists = false)
+    {
+        Identifier::assertSimple($alias);
+
+        $this->selectExpressions[] = [
+            'type'   => 'subquery',
+            'query'  => $query,
+            'alias'  => $alias,
+            'exists' => (bool) $exists,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Parses a structured join table declaration with an optional explicit
+     * `AS` alias. Both identifiers remain logical state until compilation.
+     *
+     * @param mixed $table
+     *
+     * @return array{string, null|string, string, string}
+     */
+    private function parseJoinTable($table)
+    {
+        if (!\is_string($table)
+            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
+        ) {
+            throw new RuntimeException('Invalid SQL join table declaration.');
+        }
+
+        $rawTable      = $matches[1];
+        $alias         = isset($matches[2]) ? $matches[2] : null;
+        $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
+        $reference     = $alias !== null ? $alias : $prefixedTable;
+
+        Identifier::assertSimple($rawTable);
+        Identifier::assertSimple($prefixedTable);
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        return [$rawTable, $alias, $prefixedTable, $reference];
+    }
+
+    /**
+     * Stores one validated join and its first ON condition.
+     *
+     * @param mixed $rawTable
+     * @param mixed $alias
+     * @param mixed $prefixedTable
+     * @param mixed $reference
+     * @param mixed $type
+     *
+     * @return $this
+     */
+    private function storeJoin($rawTable, $alias, $prefixedTable, $reference, array $on, $type)
+    {
+        $this->joins[] = [
+            'table'     => $prefixedTable,
+            'alias'     => $reference,
+            'on'        => [$on],
+            'type'      => JoinType::normalize($type),
+            'raw'       => $rawTable,
+            'prefixed'  => $prefixedTable,
+            'userAlias' => $alias,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Creates a nested builder that compiles its conditions inside this query's
+     * table context: it shares the model (via newQuery()) plus this query's
+     * joins and from() alias, so resolveQualifier() inside a nested where group
+     * resolves joined-table qualifiers exactly as at top level. The joins stay
+     * inert — a nested builder compiles only its conditions, never JOIN SQL.
+     *
+     * @return QueryBuilder
+     */
+    private function newNestedQuery()
+    {
+        $query        = $this->newQuery();
+        $query->joins = $this->joins;
+        $query->_from = $this->_from;
+
+        return $query;
+    }
+
+    /**
+     * Guards an aggregate function name that is interpolated straight into SQL:
+     * only a bare identifier is allowed, so parens/spaces/semicolons cannot
+     * smuggle in a payload. Case is preserved (SQL function names are
+     * case-insensitive).
+     *
+     * @param mixed $function
+     *
+     * @return void
+     */
+    private function assertSafeAggregateFunction($function)
+    {
+        if (!\is_string($function) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
+            throw new RuntimeException('Invalid aggregate function name.');
+        }
     }
 
     /**
@@ -2147,7 +2182,7 @@ class QueryBuilder
         if (\is_array($value)) {
             $operator = 'IN';
             if (isset($conditions['operator'])) {
-                $operator              = SqlOperator::normalizeList($conditions['operator']);
+                $operator               = SqlOperator::normalizeList($conditions['operator']);
                 $conditions['operator'] = $operator;
             }
 
@@ -2208,6 +2243,8 @@ class QueryBuilder
     /**
      * Normalizes a structured boolean connector without accepting whitespace
      * or comments around it.
+     *
+     * @param mixed $bool
      *
      * @return string
      */
@@ -2305,7 +2342,7 @@ class QueryBuilder
      * @param array $rows
      * @param array $managedTimestampColumns
      *
-     * @return array{0: array, 1: array}
+     * @return array{0: array, 1: array, 2: array}
      */
     private function normalizeWriteRows(array $rows, array $managedTimestampColumns = [])
     {
@@ -2322,6 +2359,7 @@ class QueryBuilder
             }
         }
 
+        $callerColumns       = $columns;
         $generatedTimestamps = [];
         foreach ($managedTimestampColumns as $column) {
             $this->normalizeWriteColumns([$column]);
@@ -2346,7 +2384,7 @@ class QueryBuilder
             $normalizedRows[] = $normalizedRow;
         }
 
-        return [$columns, $normalizedRows];
+        return [$columns, $normalizedRows, $callerColumns];
     }
 
     /**
@@ -2402,16 +2440,11 @@ class QueryBuilder
      */
     private function bulkInsert($attributes)
     {
-        [$callerColumns] = $this->normalizeWriteRows($attributes);
-        if (empty($callerColumns)) {
-            return new Collection([]);
-        }
-
-        [$columns, $rows] = $this->normalizeWriteRows(
+        [$columns, $rows, $callerColumns] = $this->normalizeWriteRows(
             $attributes,
             property_exists($this->_model, 'timestamps') && $this->_model->timestamps ? ['created_at'] : []
         );
-        if (empty($columns)) {
+        if (empty($callerColumns)) {
             return new Collection([]);
         }
 
