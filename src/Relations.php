@@ -7,6 +7,7 @@
 namespace BitApps\WPDatabase;
 
 use BitApps\WPDatabase\Query\Identifier;
+use ReflectionMethod;
 use RuntimeException;
 
 if (!\defined('ABSPATH')) {
@@ -20,6 +21,11 @@ trait Relations
     private $_relatedData = [];
 
     private $_relationKeys = [];
+
+    /**
+     * Memoized framework-vs-consumer verdict per "class::method".
+     */
+    private static $relationMethodCache = [];
 
     /**
      * Undocumented function.
@@ -123,16 +129,63 @@ trait Relations
             throw new RuntimeException('Invalid relation name.');
         }
         Identifier::assertSimple($relation);
-        if (method_exists($this, $relation)) {
-            $this->_relations[$relation] = $this->{$relation}();
 
-            return $this->_relations[$relation];
-        }
+        $result = $this->resolveRelationQuery($relation);
+
+        return $this->_relations[$relation] = $result;
     }
 
     public function getRelationalKeys()
     {
         return $this->_relationKeys;
+    }
+
+    private function resolveRelationQuery($method)
+    {
+        if (!method_exists($this, $method) || $this->isFrameworkModelMethod($method)) {
+            throw new RuntimeException($this->undefinedRelationMessage($method));
+        }
+
+        $result = $this->{$method}();
+        if (!$this->isRelationQuery($result)) {
+            throw new RuntimeException($this->undefinedRelationMessage($method));
+        }
+
+        return $result;
+    }
+
+    private function isFrameworkModelMethod($method)
+    {
+        $cacheKey = static::class . '::' . $method;
+        if (\array_key_exists($cacheKey, self::$relationMethodCache)) {
+            return self::$relationMethodCache[$cacheKey];
+        }
+
+        $declaringClass = (new ReflectionMethod($this, $method))->getDeclaringClass()->getName();
+
+        return self::$relationMethodCache[$cacheKey] = $declaringClass === Model::class;
+    }
+
+    private function isRelationQuery($result)
+    {
+        if (!$result instanceof QueryBuilder) {
+            return false;
+        }
+
+        $model          = $result->getModel();
+        $relationalKeys = $model->getRelationalKeys();
+        if (empty($relationalKeys)) {
+            return false;
+        }
+
+        $relateAs = $model->getRelateAs();
+
+        return \is_string($relateAs) && isset($relationalKeys[$relateAs]);
+    }
+
+    private function undefinedRelationMessage($method)
+    {
+        return 'Relation [' . $method . '] is not defined on [' . static::class . '].';
     }
 
     private function getRelationKeys($foreignKey, $localKey)

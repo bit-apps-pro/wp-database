@@ -647,19 +647,13 @@ class QueryBuilder
     public function joinWhere($table, $firstColumn, $operator, $value, $type = 'INNER')
     {
         [$rawTable, $userAlias, $physicalTable, $reference] = $this->parseJoinTable($table);
-        $this->assertSafeIdentifier($firstColumn);
-        $this->joins[] = [
+        $this->joins[]                                      = [
             'table'     => $physicalTable,
             'raw'       => $rawTable,
             'userAlias' => $userAlias,
             'alias'     => $reference,
-            'on'        => [[
-                'column'   => $firstColumn,
-                'operator' => SqlOperator::normalizeBinary($operator),
-                'value'    => $value,
-                'bool'     => 'AND',
-            ]],
-            'type' => JoinType::normalize($type),
+            'on'        => [$this->prepareOnValue($firstColumn, $operator, $value)],
+            'type'      => JoinType::normalize($type),
         ];
 
         return $this;
@@ -783,13 +777,7 @@ class QueryBuilder
             throw new RuntimeException('Cannot add an ON clause before a JOIN.');
         }
 
-        $this->assertSafeIdentifier($firstColumn);
-        $this->joins[$joinIndex]['on'][] = [
-            'column'   => $firstColumn,
-            'operator' => SqlOperator::normalizeBinary($operator),
-            'value'    => $value,
-            'bool'     => $this->normalizeBoolean($bool),
-        ];
+        $this->joins[$joinIndex]['on'][] = $this->prepareOnValue($firstColumn, $operator, $value, $bool);
 
         return $this;
     }
@@ -1559,6 +1547,34 @@ class QueryBuilder
     }
 
     /**
+     * Prepares a join condition with a bound right-hand value.
+     *
+     * @param mixed $column
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
+     * @return array
+     */
+    protected function prepareOnValue($column, $operator, $value, $bool = 'AND')
+    {
+        $this->assertSafeIdentifier($column);
+        if (\is_array($value) || \is_object($value) || \is_resource($value)) {
+            throw new RuntimeException('Join values must be scalar or null.');
+        }
+
+        $operator = SqlOperator::normalizeBinary($operator);
+        $bool     = $this->normalizeBoolean($bool);
+        if (\is_null($value)) {
+            $operator = $this->nullOperator($operator);
+
+            return compact('column', 'operator', 'bool');
+        }
+
+        return compact('column', 'operator', 'value', 'bool');
+    }
+
+    /**
      * Returns types
      *
      * @param mixed $value
@@ -2051,6 +2067,13 @@ class QueryBuilder
         }
 
         return $normalized;
+    }
+
+    private function nullOperator($operator)
+    {
+        $negations = ['!=', '<>', 'NOT LIKE', 'NOT IN', 'IS NOT NULL'];
+
+        return \in_array($operator, $negations, true) ? 'IS NOT NULL' : 'IS NULL';
     }
 
     private function normalizeUnsignedInteger($value, $context)
