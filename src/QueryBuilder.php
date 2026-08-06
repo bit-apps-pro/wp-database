@@ -1000,12 +1000,12 @@ class QueryBuilder
         $aliases            = $this->getTableAliases();
         $map                = $this->getTableMap();
 
-        if ($this->_from !== null
+        if (\in_array($qualifier, $aliases, true)) {
+            $resolved = $qualifier;
+        } elseif ($this->_from !== null
             && \in_array($qualifier, [$this->_model->getTableWithoutPrefix(), $this->table], true)
         ) {
             $resolved = $this->_from;
-        } elseif (\in_array($qualifier, $aliases, true)) {
-            $resolved = $qualifier;
         } elseif (isset($map[$qualifier])) {
             $resolved = $map[$qualifier];
         } elseif (\in_array($qualifier, array_values($map), true)) {

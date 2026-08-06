@@ -24,6 +24,24 @@ final class QualifiedColumnPrefixTest extends TestCase
         ];
     }
 
+    public static function joinAliasCollisionProvider(): array
+    {
+        return [
+            'logical base name' => [
+                'users',
+                'SELECT `u`.`id`,`users`.`id` FROM `wp_users` `u`',
+                'INNER JOIN `wp_posts` AS `users` ON  `users`.`user_id` = `u`.`id`',
+                'WHERE  `users`.`status` = ',
+            ],
+            'physical base name' => [
+                'wp_users',
+                'SELECT `u`.`id`,`wp_users`.`id` FROM `wp_users` `u`',
+                'INNER JOIN `wp_posts` AS `wp_users` ON  `wp_users`.`user_id` = `u`.`id`',
+                'WHERE  `wp_users`.`status` = ',
+            ],
+        ];
+    }
+
     #[DataProvider('baseQualifierProvider')]
     public function testFromAliasRewritesQualifiedBaseColumnsAcrossStructuredClauses($qualifier): void
     {
@@ -41,6 +59,25 @@ final class QualifiedColumnPrefixTest extends TestCase
         $this->assertStringContainsString('GROUP BY `u`.`id`', $sql);
         $this->assertStringContainsString('ORDER BY `u`.`id` ASC', $sql);
         $this->assertStringNotContainsString('`wp_users`.`id`', $sql);
+    }
+
+    #[DataProvider('joinAliasCollisionProvider')]
+    public function testExplicitJoinAliasWinsWhenItMatchesHiddenBaseName(
+        $alias,
+        $expectedSelect,
+        $expectedJoin,
+        $expectedWhere
+    ): void {
+        $sql = (new User())->from('u')
+            ->join('posts AS ' . $alias, $alias . '.user_id', '=', 'u.id')
+            ->select(['u.id', $alias . '.id'])
+            ->where($alias . '.status', 'published')
+            ->toSql();
+
+        $this->assertStringContainsString($expectedSelect, $sql);
+        $this->assertStringContainsString($expectedJoin, $sql);
+        $this->assertStringContainsString($expectedWhere, $sql);
+        $this->assertStringNotContainsString('ON  `u`.`user_id` = `u`.`id`', $sql);
     }
 
     public function testWhereResolvesUnprefixedModelTable(): void
