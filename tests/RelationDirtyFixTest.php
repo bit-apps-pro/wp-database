@@ -49,7 +49,7 @@ final class RelationDirtyFixTest extends TestCase
 
         $sql = $GLOBALS['wpdb']->last_query;
         $this->assertStringContainsString('UPDATE wp_users', $sql);
-        $this->assertStringContainsString('name =', $sql);
+        $this->assertStringContainsString('`name` =', $sql);
         $this->assertStringNotContainsString('posts', $sql);
     }
 
@@ -68,7 +68,7 @@ final class RelationDirtyFixTest extends TestCase
         $user->save();
 
         $sql = $GLOBALS['wpdb']->last_query;
-        $this->assertStringContainsString('tags =', $sql);
+        $this->assertStringContainsString('`tags` =', $sql);
         $this->assertStringContainsString('["a","b"]', $sql);
     }
 }

@@ -4,6 +4,10 @@ namespace BitApps\WPDatabase;
 
 use BitApps\WPDatabase\Concerns\QueriesRelationships;
 use BitApps\WPDatabase\Query\Grammar;
+use BitApps\WPDatabase\Query\Identifier;
+use BitApps\WPDatabase\Query\JoinType;
+use BitApps\WPDatabase\Query\RawTemplate;
+use BitApps\WPDatabase\Query\SqlOperator;
 
 use Closure;
 use DateTime;
@@ -34,6 +38,15 @@ class QueryBuilder
         'columns'  => [],
         'bindings' => [],
     ];
+
+    /**
+     * Framework-generated SELECT expressions whose structural parts remain
+     * typed until Grammar compilation. Developer-authored expressions belong
+     * in selectRaw().
+     *
+     * @var array<int, array>
+     */
+    protected $selectExpressions = [];
 
     protected $table;
 
@@ -144,6 +157,11 @@ class QueryBuilder
      */
     public function from($_from)
     {
+        if (!\is_string($_from)) {
+            throw new RuntimeException('Invalid SQL table alias.');
+        }
+
+        Identifier::assertSimple($_from);
         $this->_from = $_from;
 
         return $this;
@@ -361,22 +379,14 @@ class QueryBuilder
         return $this->get($columns);
     }
 
+    /**
+     * Renders a select/aggregate column in this query's table context.
+     *
+     * @return string
+     */
     public function prepareColumnName(string $column)
     {
-        if (preg_match('/^(.+?)\s+as\s+(.+)$/i', $column, $matches)) {
-            return $this->prepareColumnName(trim($matches[1])) . ' AS `' . trim($matches[2], " `") . '`';
-        }
-
-        if (strpos($column, '.') !== false) {
-            return $column;
-        }
-
-        $table = "`{$this->table}`.";
-        if ($column != '*') {
-            $column = "`{$column}`";
-        }
-
-        return $table . $column;
+        return $this->renderIdentifier($column, true, true);
     }
 
     /**
@@ -392,7 +402,7 @@ class QueryBuilder
 
         $this->select = [];
         foreach ($select as $column) {
-            $this->select[] = $this->prepareColumnName($column);
+            $this->select[] = $column;
         }
 
         return $this;
@@ -411,10 +421,11 @@ class QueryBuilder
      */
     public function prepareKeySubquery($keyColumn): string
     {
-        $clone            = clone $this;
-        $clone->selectRaw = ['columns' => [], 'bindings' => []];
-        $clone->groupBy   = [];
-        $clone->having    = [];
+        $clone                    = clone $this;
+        $clone->selectRaw         = ['columns' => [], 'bindings' => []];
+        $clone->selectExpressions = [];
+        $clone->groupBy           = [];
+        $clone->having            = [];
         if (!isset($clone->limit)) {
             $clone->orderBy = [];
         }
@@ -437,10 +448,20 @@ class QueryBuilder
             if (\in_array($column, $this->select, true)) {
                 continue;
             }
-            $this->select[] = $this->prepareColumnName($column);
+            $this->select[] = $column;
         }
 
         return $this;
+    }
+
+    /**
+     * Returns framework-generated structured SELECT expressions.
+     *
+     * @return array<int, array>
+     */
+    public function getSelectExpressions()
+    {
+        return $this->selectExpressions;
     }
 
     /**
@@ -627,6 +648,8 @@ class QueryBuilder
      */
     public function whereIn($column, $value)
     {
+        $this->assertSafeIdentifier($column);
+
         if (\is_array($value)) {
             if ($value === []) {
                 return $this->whereRaw('0 = 1');
@@ -653,6 +676,8 @@ class QueryBuilder
      */
     public function whereNull($column)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NULL',
@@ -670,6 +695,8 @@ class QueryBuilder
      */
     public function whereNotNull($column)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
             'column'   => $column,
             'operator' => 'IS NOT NULL',
@@ -713,10 +740,12 @@ class QueryBuilder
      */
     public function whereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
+            'column'   => $column,
+            'operator' => SqlOperator::normalizeRange('BETWEEN'),
+            'between'  => [$start, $end],
         ];
 
         return $this;
@@ -733,10 +762,12 @@ class QueryBuilder
      */
     public function orWhereBetween($column, $start, $end)
     {
+        $this->assertSafeIdentifier($column);
+
         $this->where[] = [
-            'raw' => ' (' . $column . ' BETWEEN ' . $this->getValueType($start)
-                . ' AND ' . $this->getValueType($end) . ')',
-            'bindings' => [$start, $end],
+            'column'   => $column,
+            'operator' => SqlOperator::normalizeRange('BETWEEN'),
+            'between'  => [$start, $end],
             'bool'     => 'OR',
         ];
 
@@ -832,25 +863,41 @@ class QueryBuilder
      */
     public function join($table, $firstColumn, $operator = null, $secondColumn = null, $type = 'INNER')
     {
-        $parts         = preg_split('/\s+as\s+/i', trim($table), 2);
-        $rawTable      = $parts[0];
-        $alias         = isset($parts[1]) ? $parts[1] : null;
-        $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
-        $reference     = $alias !== null ? $alias : $prefixedTable;
-        $tableSql      = $alias !== null ? $prefixedTable . ' as ' . $alias : $prefixedTable;
+        [$rawTable, $alias, $prefixedTable, $reference] = $this->parseJoinTable($table);
 
-        $on[]          = $this->prepareOn($reference, $firstColumn, $operator, $secondColumn, 'AND');
-        $this->joins[] = [
-            'table'     => $tableSql,
-            'alias'     => $reference,
-            'on'        => $on,
-            'type'      => $type,
-            'raw'       => $rawTable,
-            'prefixed'  => $prefixedTable,
-            'userAlias' => $alias,
-        ];
+        return $this->storeJoin(
+            $rawTable,
+            $alias,
+            $prefixedTable,
+            $reference,
+            $this->prepareOnColumn($reference, $firstColumn, $operator, $secondColumn),
+            $type
+        );
+    }
 
-        return $this;
+    /**
+     * Joins a table using a bound scalar value as the right-hand operand.
+     *
+     * @param mixed $table
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $type
+     *
+     * @return $this
+     */
+    public function joinWhere($table, $firstColumn, $operator, $value, $type = 'INNER')
+    {
+        [$rawTable, $alias, $prefixedTable, $reference] = $this->parseJoinTable($table);
+
+        return $this->storeJoin(
+            $rawTable,
+            $alias,
+            $prefixedTable,
+            $reference,
+            $this->prepareOnValue($firstColumn, $operator, $value),
+            $type
+        );
     }
 
     /**
@@ -895,10 +942,13 @@ class QueryBuilder
     }
 
     /**
-     * Rewrites a qualified column whose table part is an unprefixed name this
-     * query owns (`users.id` -> `` `wp_users`.id ``). Aliases win over the map,
-     * and unknown / already-physical qualifiers pass through unchanged.
-     * Idempotent: a physical qualifier is never a map key.
+     * Renders a structured column identifier in this query's table context.
+     *
+     * Bare columns are qualified with the model's physical table. A qualified
+     * column must name a registered logical table, its mapped physical table,
+     * or an alias in scope. Unknown and schema-qualified names intentionally
+     * fail closed; callers needing those rare forms must register the table or
+     * alias, or use a reviewed raw-expression API.
      *
      * @param mixed $column
      *
@@ -910,39 +960,61 @@ class QueryBuilder
             return $column;
         }
 
-        $dot = strpos($column, '.');
-        if ($dot === false) {
-            return $column;
-        }
-
-        $left  = trim(substr($column, 0, $dot), '`');
-        $right = substr($column, $dot + 1);
-
-        if (\in_array($left, $this->getTableAliases(), true)) {
-            return $column;
-        }
-
-        $map = $this->getTableMap();
-
-        return isset($map[$left]) ? '`' . $map[$left] . '`.' . $right : $column;
+        return $this->renderIdentifier($column, true, true);
     }
 
     /**
-     * Creates a nested builder that compiles its conditions inside this query's
-     * table context: it shares the model (via newQuery()) plus this query's
-     * joins and from() alias, so resolveQualifier() inside a nested where group
-     * resolves joined-table qualifiers exactly as at top level. The joins stay
-     * inert — a nested builder compiles only its conditions, never JOIN SQL.
+     * Validates, resolves, and quotes a column at the SQL rendering boundary.
      *
-     * @return QueryBuilder
+     * @param string $column
+     * @param bool   $allowWildcard
+     * @param bool   $allowAlias
+     *
+     * @return string
      */
-    private function newNestedQuery()
+    public function renderIdentifier(string $column, bool $allowWildcard = false, bool $allowAlias = false): string
     {
-        $query        = $this->newQuery();
-        $query->joins = $this->joins;
-        $query->_from = $this->_from;
+        if (preg_match('/^(.+?)\s+AS\s+(.+)$/i', $column, $matches)) {
+            if (!$allowAlias) {
+                throw new RuntimeException('Aliases are not allowed in this SQL identifier context.');
+            }
 
-        return $query;
+            return $this->renderIdentifier($matches[1], $allowWildcard)
+                . ' AS ' . Identifier::quoteAlias($matches[2]);
+        }
+
+        $segments = explode('.', $column);
+        if (\count($segments) > 2) {
+            throw new RuntimeException('Unknown or schema-qualified SQL identifier.');
+        }
+
+        Identifier::quoteQualified($column, $allowWildcard);
+
+        if (\count($segments) === 1) {
+            $baseReference = $this->_from ?? $this->table;
+
+            return Identifier::quoteQualified($baseReference . '.' . $column, $allowWildcard);
+        }
+
+        [$qualifier, $name] = $segments;
+        $aliases            = $this->getTableAliases();
+        $map                = $this->getTableMap();
+
+        if (\in_array($qualifier, $aliases, true)) {
+            $resolved = $qualifier;
+        } elseif ($this->_from !== null
+            && \in_array($qualifier, [$this->_model->getTableWithoutPrefix(), $this->table], true)
+        ) {
+            $resolved = $this->_from;
+        } elseif (isset($map[$qualifier])) {
+            $resolved = $map[$qualifier];
+        } elseif (\in_array($qualifier, array_values($map), true)) {
+            $resolved = $qualifier;
+        } else {
+            throw new RuntimeException('Unknown SQL identifier qualifier.');
+        }
+
+        return Identifier::quoteQualified($resolved . '.' . $name, $allowWildcard);
     }
 
     /**
@@ -1019,11 +1091,11 @@ class QueryBuilder
     {
         $joinIndex = (\count($this->joins) - 1);
         if ($joinIndex < 0) {
-            $joinIndex = 0;
+            throw new RuntimeException('Cannot add an ON clause before a join.');
         }
 
         $table                           = $this->joins[$joinIndex]['alias'];
-        $this->joins[$joinIndex]['on'][] = $this->prepareOn($table, $firstColumn, $operator, $secondColumn, $bool);
+        $this->joins[$joinIndex]['on'][] = $this->prepareOnColumn($table, $firstColumn, $operator, $secondColumn, $bool);
 
         return $this;
     }
@@ -1040,6 +1112,83 @@ class QueryBuilder
     public function orOn($firstColumn, $operator = null, $secondColumn = null)
     {
         return $this->on($firstColumn, $operator, $secondColumn, 'OR');
+    }
+
+    /**
+     * Adds an ON condition whose right-hand operand is a bound scalar value.
+     *
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
+     * @return $this
+     */
+    public function onValue($firstColumn, $operator, $value, $bool = 'AND')
+    {
+        $joinIndex = (\count($this->joins) - 1);
+        if ($joinIndex < 0) {
+            throw new RuntimeException('Cannot add an ON clause before a join.');
+        }
+
+        $this->joins[$joinIndex]['on'][] = $this->prepareOnValue($firstColumn, $operator, $value, $bool);
+
+        return $this;
+    }
+
+    /**
+     * Adds an OR ON condition whose right-hand operand is a bound scalar value.
+     *
+     * @param mixed $firstColumn
+     * @param mixed $operator
+     * @param mixed $value
+     *
+     * @return $this
+     */
+    public function orOnValue($firstColumn, $operator, $value)
+    {
+        return $this->onValue($firstColumn, $operator, $value, 'OR');
+    }
+
+    /**
+     * Adds an explicitly raw ON condition. The SQL must be developer-authored;
+     * dynamic values belong in placeholders and $bindings.
+     *
+     * @param mixed $sql
+     * @param mixed $bool
+     *
+     * @return $this
+     */
+    public function onRaw($sql, array $bindings = [], $bool = 'AND')
+    {
+        $joinIndex = (\count($this->joins) - 1);
+        if ($joinIndex < 0) {
+            throw new RuntimeException('Cannot add an ON clause before a join.');
+        }
+
+        if (!\is_string($sql) || $sql === '') {
+            throw new RuntimeException('Invalid raw ON expression.');
+        }
+
+        $this->joins[$joinIndex]['on'][] = [
+            'raw'      => $sql,
+            'bindings' => $bindings,
+            'bool'     => $this->normalizeBoolean($bool),
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds an explicitly raw OR ON condition.
+     *
+     * @param mixed $sql
+     *
+     * @return $this
+     */
+    public function orOnRaw($sql, array $bindings = [])
+    {
+        return $this->onRaw($sql, $bindings, 'OR');
     }
 
     /**
@@ -1120,14 +1269,47 @@ class QueryBuilder
     }
 
     /**
-     * Runs raw query
+     * Runs a constrained, developer-authored SQL template.
+     *
+     * Dynamic values must use wpdb placeholders. Dynamic identifiers and sort
+     * directions must use typed markers and exactly matching maps. Request data
+     * must never supply the template itself.
+     *
+     * @return mixed
+     */
+    public function rawPrepared(
+        string $template,
+        array $bindings = [],
+        array $identifiers = [],
+        array $directions = []
+    ) {
+        $sql = RawTemplate::compile($template, $bindings, $identifiers, $directions);
+
+        if ($bindings === []) {
+            $sql = str_replace('%%', '%', $sql);
+        } else {
+            $prepared = Connection::prepare($sql, $bindings);
+            if (!\is_string($prepared) || $prepared === '') {
+                throw new RuntimeException('SQL query preparation failed.');
+            }
+            $sql = $prepared;
+        }
+
+        return $this->unsafeRaw($sql);
+    }
+
+    /**
+     * Runs reviewed, fully developer-controlled SQL through the legacy path.
+     *
+     * Bind every dynamic value. Request data must never be interpolated into
+     * the SQL string.
      *
      * @param string $sql
      * @param array  $bindings
      *
      * @return mixed
      */
-    public function raw($sql, $bindings = [])
+    public function unsafeRaw(string $sql, array $bindings = [])
     {
         $this->_method  = self::RAW;
         $this->raw      = $sql;
@@ -1143,6 +1325,22 @@ class QueryBuilder
         unset($this->_method);
 
         return $result;
+    }
+
+    /**
+     * Runs raw SQL through the legacy unsafe implementation.
+     *
+     * @deprecated Use rawPrepared() for typed templates or unsafeRaw() for
+     *             reviewed, fully developer-controlled legacy SQL.
+     *
+     * @param string $sql
+     * @param array  $bindings
+     *
+     * @return mixed
+     */
+    public function raw($sql, $bindings = [])
+    {
+        return $this->unsafeRaw($sql, $bindings);
     }
 
     public function prepareRaw()
@@ -1195,6 +1393,7 @@ class QueryBuilder
             return $this->bulkInsert($attributes);
         }
 
+        $this->normalizeWriteColumns(array_keys($attributes));
         $this->_model->fill($attributes);
         if ($this->save()) {
             return $this->_model;
@@ -1212,12 +1411,20 @@ class QueryBuilder
      */
     public function update($attributes = [])
     {
+        if (empty($attributes)) {
+            return false;
+        }
+
+        $this->normalizeWriteColumns(array_keys($attributes));
         $this->_model->fill($attributes);
         if ($this->_model->exists()) {
             return $this->save();
         }
 
         $this->update = $this->prepareAttributeForSaveOrUpdate(true);
+        if (empty($this->update)) {
+            return false;
+        }
 
         return $this->exec();
     }
@@ -1244,6 +1451,10 @@ class QueryBuilder
      */
     public function save()
     {
+        $this->normalizeWriteColumns(
+            $this->withoutRelationColumns(array_keys($this->_model->getAttributes()))
+        );
+
         if ($this->_model->fireEvent('saving') === false) {
             return false;
         }
@@ -1279,6 +1490,10 @@ class QueryBuilder
                 return $this->_model;
             }
 
+            return false;
+        }
+
+        if (empty($columns)) {
             return false;
         }
 
@@ -1326,31 +1541,15 @@ class QueryBuilder
     {
         $this->assertSafeAggregateFunction($function);
 
-        $query            = $this->clone();
-        $query->select    = [];
-        $query->selectRaw = ['columns' => [], 'bindings' => []];
-        $query->distinct  = false;
-        $preparedColumn   = $column === '*' ? '*' : $query->prepareColumnName($column);
-        $result           = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
+        $query                    = $this->clone();
+        $query->select            = [];
+        $query->selectRaw         = ['columns' => [], 'bindings' => []];
+        $query->selectExpressions = [];
+        $query->distinct          = false;
+        $preparedColumn           = $column === '*' ? '*' : $query->prepareColumnName($column);
+        $result                   = $query->selectRaw($function . '(' . $preparedColumn . ') as ' . $function)->exec();
 
         return \is_array($result) && isset($result[0]->{$function}) ? $result[0]->{$function} : null;
-    }
-
-    /**
-     * Guards an aggregate function name that is interpolated straight into SQL:
-     * only a bare identifier is allowed, so parens/spaces/semicolons cannot
-     * smuggle in a payload. Case is preserved (SQL function names are
-     * case-insensitive).
-     *
-     * @param mixed $function
-     *
-     * @return void
-     */
-    private function assertSafeAggregateFunction($function)
-    {
-        if (!\is_string($function) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
-            throw new RuntimeException('Invalid aggregate function name.');
-        }
     }
 
     public function delete()
@@ -1479,7 +1678,7 @@ class QueryBuilder
 
                     break;
             }
-        } elseif (!empty($this->select) || !empty($this->selectRaw)) {
+        } elseif (!empty($this->select) || !empty($this->selectExpressions) || !empty($this->selectRaw)) {
             $this->_method = self::SELECT;
             $sql           = $this->grammar()->compileSelect($this);
         }
@@ -1502,79 +1701,57 @@ class QueryBuilder
 
     public function upsert(array $values, ?array $update = null)
     {
-        if (!\is_array(reset($values))) {
+        if (empty($values)) {
+            return false;
+        }
+
+        if (!$this->isListOfRows($values)) {
             $values = [$values];
         }
 
+        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
+        [$columns, $rows] = $this->normalizeWriteRows(
+            $values,
+            $manageTimestamps ? ['created_at', 'updated_at'] : []
+        );
+        if (empty($columns)) {
+            return false;
+        }
+
         if (empty($update)) {
-            $update = array_keys($values[0]);
+            $update = $columns;
+        }
+        $update = $this->normalizeWriteColumns($update);
+
+        if ($manageTimestamps) {
+            // Never overwrite the original creation time on update; always bump updated_at.
+            $update = array_values(array_diff($update, ['created_at']));
+            if (!\in_array('updated_at', $update, true)) {
+                $update[] = 'updated_at';
+            }
         }
 
         $this->bindings = [];
-        $columns        = array_keys($values[0]);
-        sort($columns);
-        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
-        $addCreatedAt     = $manageTimestamps                            && !\in_array('created_at', $columns, true);
-        $addUpdatedAt     = $manageTimestamps                            && !\in_array('updated_at', $columns, true);
-        if ($addCreatedAt) {
-            $columns[] = 'created_at';
-        }
-        if ($addUpdatedAt) {
-            $columns[] = 'updated_at';
-        }
-        $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $columns) . ')';
+        $sql            = 'INSERT INTO ' . $this->table;
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
 
         $sql .= ' VALUES ';
         $insertAbleValues = [];
-        foreach ($values as $row) {
-            ksort($row);
-            if ($addCreatedAt || $addUpdatedAt) {
-                $now = $this->currentTimestamp();
-                if ($addCreatedAt) {
-                    $row['created_at'] = $now;
-                }
-                if ($addUpdatedAt) {
-                    $row['updated_at'] = $now;
-                }
-            }
-
-            $rowValues          = array_values($row);
+        foreach ($rows as $row) {
             $insertAbleValues[] = ' ('
                 . implode(
                     ', ',
-                    array_map(
-                        function ($value) {
-                            if (\is_null($value)) {
-                                return 'NULL';
-                            }
-
-                            if (\is_array($value) || \is_object($value)) {
-                                $value = wp_json_encode($value);
-                            }
-
-                            $this->bindings[] = $value;
-
-                            return $this->getValueType($value);
-                        },
-                        $rowValues
-                    )
+                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
                 ) . ')';
         }
 
         $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
         $sql .= ' ON DUPLICATE KEY UPDATE ';
-        if ($manageTimestamps) {
-            // Never overwrite the original creation time on update; always bump updated_at.
-            $update = array_diff($update, ['created_at']);
-            if (!\in_array('updated_at', $update, true)) {
-                $update[] = 'updated_at';
-            }
-        }
-        $update = array_map(function ($column) {
+        $sql .= implode(', ', array_map(function ($column) {
+            $column = $this->compileWriteColumn($column);
+
             return $column . ' = VALUES(' . $column . ')';
-        }, $update);
-        $sql .= implode(', ', $update);
+        }, $update));
         $sql .= ';';
 
         return $this->raw($sql, $this->bindings);
@@ -1617,6 +1794,8 @@ class QueryBuilder
             return $conditions;
         }
 
+        $bool = $this->normalizeBoolean($bool);
+
         if (\func_num_args() == 1 && \is_array($params[0])) {
             foreach ($params[0] as $clause) {
                 if ($type === 'where') {
@@ -1633,7 +1812,7 @@ class QueryBuilder
             \call_user_func($params[0], $nestedQuery);
             $conditions['query'] = $nestedQuery;
             if (isset($params[1])) {
-                $conditions['bool'] = $params[1];
+                $conditions['bool'] = $this->normalizeBoolean($params[1]);
             }
         } elseif ($noOfParams == 2) {
             $conditions['column'] = $params[0];
@@ -1646,7 +1825,7 @@ class QueryBuilder
             $conditions['column']                                     = $params[0];
             $conditions['operator']                                   = $params[1];
             $conditions[$type === 'where' ? 'value' : 'secondColumn'] = $params[2];
-            $conditions['bool']                                       = $params[3];
+            $conditions['bool']                                       = $this->normalizeBoolean($params[3]);
         }
 
         return $this->normalizeConditions($conditions, $type);
@@ -1698,21 +1877,51 @@ class QueryBuilder
      *
      * @return $this
      */
-    protected function prepareOn($table, $column, $operator, $secondColumn, $bool = 'AND')
+    protected function prepareOnColumn($table, $column, $operator, $secondColumn, $bool = 'AND')
     {
         if (\is_null($operator) && \is_null($secondColumn)) {
             $secondColumn = $column;
             $operator     = '=';
         }
 
-        // Qualify only a bare column identifier; leave constants, quoted values
-        // and function calls (10, 'active', NOW()) untouched, and dotted names
-        // that are already qualified.
-        if (!\is_null($secondColumn) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $secondColumn)) {
+        $this->assertSafeIdentifier($column);
+        $this->assertSafeIdentifier($secondColumn);
+        $operator = SqlOperator::normalizeBinary($operator);
+        $bool     = $this->normalizeBoolean($bool);
+
+        if (strpos($secondColumn, '.') === false) {
             $secondColumn = $table . '.' . $secondColumn;
         }
 
         return compact('column', 'operator', 'secondColumn', 'bool');
+    }
+
+    /**
+     * Prepares a join condition with a bound right-hand value.
+     *
+     * @param mixed $column
+     * @param mixed $operator
+     * @param mixed $value
+     * @param mixed $bool
+     *
+     * @return array
+     */
+    protected function prepareOnValue($column, $operator, $value, $bool = 'AND')
+    {
+        $this->assertSafeIdentifier($column);
+        if (\is_array($value) || \is_object($value) || \is_resource($value)) {
+            throw new RuntimeException('Join values must be scalar or null.');
+        }
+
+        $operator = SqlOperator::normalizeBinary($operator);
+        $bool     = $this->normalizeBoolean($bool);
+        if (\is_null($value)) {
+            $operator = $this->nullOperator($operator);
+
+            return compact('column', 'operator', 'bool');
+        }
+
+        return compact('column', 'operator', 'value', 'bool');
     }
 
     /**
@@ -1744,10 +1953,153 @@ class QueryBuilder
             $absHour = abs($hours);
             $absMins = abs($minutes * 60);
 
-            $timezoneString = sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
+            $timezoneString = \sprintf('%s%02d:%02d', $sign, $absHour, $absMins);
         }
 
         return $timezoneString;
+    }
+
+    /**
+     * Adds an aggregate SELECT expression without routing its identifier
+     * through the raw SQL channel.
+     *
+     * @param mixed       $function
+     * @param mixed       $column
+     * @param null|string $alias
+     *
+     * @return $this
+     */
+    private function addAggregateSelect($function, $column, $alias = null)
+    {
+        $this->assertSafeAggregateFunction($function);
+        if ($column !== '*') {
+            $this->assertSafeIdentifier($column);
+        }
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        $this->selectExpressions[] = [
+            'type'     => 'aggregate',
+            'function' => $function,
+            'column'   => $column,
+            'alias'    => $alias,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds a relation subquery SELECT expression with a validated output alias.
+     * The nested builder remains structured until Grammar compilation.
+     *
+     * @param mixed $exists
+     *
+     * @return $this
+     */
+    private function addSubquerySelect(QueryBuilder $query, string $alias, $exists = false)
+    {
+        Identifier::assertSimple($alias);
+
+        $this->selectExpressions[] = [
+            'type'   => 'subquery',
+            'query'  => $query,
+            'alias'  => $alias,
+            'exists' => (bool) $exists,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Parses a structured join table declaration with an optional explicit
+     * `AS` alias. Both identifiers remain logical state until compilation.
+     *
+     * @param mixed $table
+     *
+     * @return array{string, null|string, string, string}
+     */
+    private function parseJoinTable($table)
+    {
+        if (!\is_string($table)
+            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
+        ) {
+            throw new RuntimeException('Invalid SQL join table declaration.');
+        }
+
+        $rawTable      = $matches[1];
+        $alias         = isset($matches[2]) ? $matches[2] : null;
+        $prefixedTable = $this->_model->getTablePrefix() . $rawTable;
+        $reference     = $alias !== null ? $alias : $prefixedTable;
+
+        Identifier::assertSimple($rawTable);
+        Identifier::assertSimple($prefixedTable);
+        if ($alias !== null) {
+            Identifier::assertSimple($alias);
+        }
+
+        return [$rawTable, $alias, $prefixedTable, $reference];
+    }
+
+    /**
+     * Stores one validated join and its first ON condition.
+     *
+     * @param mixed $rawTable
+     * @param mixed $alias
+     * @param mixed $prefixedTable
+     * @param mixed $reference
+     * @param mixed $type
+     *
+     * @return $this
+     */
+    private function storeJoin($rawTable, $alias, $prefixedTable, $reference, array $on, $type)
+    {
+        $this->joins[] = [
+            'table'     => $prefixedTable,
+            'alias'     => $reference,
+            'on'        => [$on],
+            'type'      => JoinType::normalize($type),
+            'raw'       => $rawTable,
+            'prefixed'  => $prefixedTable,
+            'userAlias' => $alias,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Creates a nested builder that compiles its conditions inside this query's
+     * table context: it shares the model (via newQuery()) plus this query's
+     * joins and from() alias, so resolveQualifier() inside a nested where group
+     * resolves joined-table qualifiers exactly as at top level. The joins stay
+     * inert — a nested builder compiles only its conditions, never JOIN SQL.
+     *
+     * @return QueryBuilder
+     */
+    private function newNestedQuery()
+    {
+        $query        = $this->newQuery();
+        $query->joins = $this->joins;
+        $query->_from = $this->_from;
+
+        return $query;
+    }
+
+    /**
+     * Guards an aggregate function name that is interpolated straight into SQL:
+     * only a bare identifier is allowed, so parens/spaces/semicolons cannot
+     * smuggle in a payload. Case is preserved (SQL function names are
+     * case-insensitive).
+     *
+     * @param mixed $function
+     *
+     * @return void
+     */
+    private function assertSafeAggregateFunction($function)
+    {
+        if (!\is_string($function) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $function)) {
+            throw new RuntimeException('Invalid aggregate function name.');
+        }
     }
 
     /**
@@ -1806,7 +2158,8 @@ class QueryBuilder
      * on prepare, independent of arity: an empty array becomes the false
      * constant `0 = 1`; a null value with an explicit operator becomes
      * IS [NOT] NULL; a non-empty array has its elements coerced to scalars; an
-     * object value is JSON-encoded. Having clauses are left untouched.
+     * object value is JSON-encoded. Explicit list operators are normalized by
+     * value shape for both where and having clauses.
      *
      * @param array  $conditions
      * @param string $type
@@ -1815,7 +2168,15 @@ class QueryBuilder
      */
     private function normalizeConditions(array $conditions, $type)
     {
-        if ($type !== 'where' || !\array_key_exists('value', $conditions)) {
+        if (isset($conditions['bool'])) {
+            $conditions['bool'] = $this->normalizeBoolean($conditions['bool']);
+        }
+
+        if (isset($conditions['column'])) {
+            $this->assertSafeIdentifier($conditions['column']);
+        }
+
+        if (!\array_key_exists('value', $conditions)) {
             return $conditions;
         }
 
@@ -1823,8 +2184,18 @@ class QueryBuilder
         $bool  = isset($conditions['bool']) ? $conditions['bool'] : 'AND';
 
         if (\is_array($value)) {
+            $operator = 'IN';
+            if (isset($conditions['operator'])) {
+                $operator               = SqlOperator::normalizeList($conditions['operator']);
+                $conditions['operator'] = $operator;
+            }
+
             if ($value === []) {
-                return ['bool' => $bool, 'raw' => '0 = 1', 'bindings' => []];
+                return [
+                    'bool'     => $bool,
+                    'raw'      => $operator === 'NOT IN' ? '1 = 1' : '0 = 1',
+                    'bindings' => [],
+                ];
             }
 
             $conditions['value'] = $this->sanitizeInValues($value);
@@ -1832,11 +2203,22 @@ class QueryBuilder
             return $conditions;
         }
 
+        if (isset($conditions['operator'])) {
+            $conditions['operator'] = SqlOperator::normalizeBinary($conditions['operator']);
+        }
+
+        if ($type !== 'where') {
+            return $conditions;
+        }
+
         if (\is_null($value)) {
             if (isset($conditions['operator'])) {
-                unset($conditions['value']);
                 $conditions['operator'] = $this->nullOperator($conditions['operator']);
+            } else {
+                $conditions['operator'] = 'IS NULL';
             }
+
+            unset($conditions['value']);
 
             return $conditions;
         }
@@ -1857,16 +2239,37 @@ class QueryBuilder
      */
     private function nullOperator($operator)
     {
-        $negations = ['!=', '<>', 'NOT', 'IS NOT', 'IS NOT NULL'];
+        $negations = ['!=', '<>', 'NOT LIKE', 'NOT IN', 'IS NOT NULL'];
 
         return \in_array($operator, $negations, true) ? 'IS NOT NULL' : 'IS NULL';
     }
 
     /**
-     * Guards an ORDER BY / GROUP BY column against injection: only a plain,
-     * qualified (table.column) or back-ticked identifier is accepted. Raw
-     * expressions must go through orderByRaw(). Valid identifiers are not
-     * re-rendered, so the emitted SQL stays byte-identical.
+     * Normalizes a structured boolean connector without accepting whitespace
+     * or comments around it.
+     *
+     * @param mixed $bool
+     *
+     * @return string
+     */
+    private function normalizeBoolean($bool)
+    {
+        if (!\is_string($bool)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        $normalized = strtoupper($bool);
+        if (!\in_array($normalized, ['AND', 'OR'], true)) {
+            throw new RuntimeException('Invalid SQL boolean connector.');
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Guards a structured column boundary. Only plain or qualified logical
+     * identifiers are accepted; raw expressions belong in an explicitly raw
+     * API and contextual qualification remains deferred until compilation.
      *
      * @param mixed $column
      *
@@ -1874,9 +2277,11 @@ class QueryBuilder
      */
     private function assertSafeIdentifier($column)
     {
-        if (!\is_string($column) || !preg_match('/^[A-Za-z0-9_.`]+$/', $column)) {
-            throw new RuntimeException('Unsafe column passed to order/group by clause.');
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid structured SQL identifier.');
         }
+
+        Identifier::quoteQualified($column);
     }
 
     /**
@@ -1907,6 +2312,130 @@ class QueryBuilder
     }
 
     /**
+     * Validates logical write-column names while keeping them unquoted until
+     * compilation. Write schemas intentionally allow only simple identifiers:
+     * dot-qualified paths are meaningful in read clauses, not INSERT/UPDATE.
+     *
+     * @param array $columns
+     *
+     * @return array
+     */
+    private function normalizeWriteColumns(array $columns)
+    {
+        $normalized = [];
+
+        foreach ($columns as $column) {
+            if (!\is_string($column)) {
+                throw new RuntimeException('Invalid SQL identifier.');
+            }
+
+            Identifier::assertSimple($column);
+            if (!\in_array($column, $normalized, true)) {
+                $normalized[] = $column;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Builds the canonical, first-seen union schema for a set of write rows
+     * and aligns every row to it. Missing input remains SQL NULL rather than
+     * borrowing a value by position from another row.
+     *
+     * @param array $rows
+     * @param array $managedTimestampColumns
+     *
+     * @return array{0: array, 1: array, 2: array}
+     */
+    private function normalizeWriteRows(array $rows, array $managedTimestampColumns = [])
+    {
+        $columns = [];
+        foreach ($rows as $row) {
+            if (!\is_array($row)) {
+                throw new RuntimeException('Invalid write row.');
+            }
+
+            foreach ($this->normalizeWriteColumns(array_keys($row)) as $column) {
+                if (!\in_array($column, $columns, true)) {
+                    $columns[] = $column;
+                }
+            }
+        }
+
+        $callerColumns       = $columns;
+        $generatedTimestamps = [];
+        foreach ($managedTimestampColumns as $column) {
+            $this->normalizeWriteColumns([$column]);
+            if (!\in_array($column, $columns, true)) {
+                $columns[]                    = $column;
+                $generatedTimestamps[$column] = true;
+            }
+        }
+
+        $normalizedRows = [];
+        foreach ($rows as $row) {
+            $normalizedRow = [];
+            foreach ($columns as $column) {
+                if (\array_key_exists($column, $row)) {
+                    $normalizedRow[] = $row[$column];
+                } elseif (isset($generatedTimestamps[$column])) {
+                    $normalizedRow[] = $this->currentTimestamp();
+                } else {
+                    $normalizedRow[] = null;
+                }
+            }
+            $normalizedRows[] = $normalizedRow;
+        }
+
+        return [$columns, $normalizedRows, $callerColumns];
+    }
+
+    /**
+     * @param array $columns
+     *
+     * @return array
+     */
+    private function compileWriteColumns(array $columns)
+    {
+        return array_map(fn ($column) => $this->compileWriteColumn($column), $columns);
+    }
+
+    /**
+     * @param mixed $column
+     *
+     * @return string
+     */
+    private function compileWriteColumn($column)
+    {
+        if (!\is_string($column)) {
+            throw new RuntimeException('Invalid SQL identifier.');
+        }
+
+        return Identifier::quoteQualified($column);
+    }
+
+    /**
+     * @param mixed $value
+     *
+     * @return string
+     */
+    private function compileWriteValue($value)
+    {
+        if (\is_null($value)) {
+            return 'NULL';
+        }
+
+        if (\is_array($value) || \is_object($value)) {
+            $value = wp_json_encode($value);
+        }
+
+        $this->bindings[] = $value;
+
+        return $this->getValueType($value);
+    }
+
+    /**
      * Run bulk insert query
      *
      * @param array $attributes
@@ -1915,55 +2444,25 @@ class QueryBuilder
      */
     private function bulkInsert($attributes)
     {
-        $firstRow = reset($attributes);
-        if (empty($firstRow)) {
+        [$columns, $rows, $callerColumns] = $this->normalizeWriteRows(
+            $attributes,
+            property_exists($this->_model, 'timestamps') && $this->_model->timestamps ? ['created_at'] : []
+        );
+        if (empty($callerColumns)) {
             return new Collection([]);
-        }
-
-        ksort($firstRow);
-        $columns   = array_keys($firstRow);
-        $createdAt = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
-        if ($createdAt) {
-            $columns[] = 'created_at';
         }
 
         $this->bindings = [];
 
         $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $columns) . ')';
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
         $sql .= ' VALUES ';
         $values = [];
-        foreach ($attributes as $row) {
-            if ($createdAt) {
-                $row['created_at'] = $this->currentTimestamp();
-            }
-
-            // Align each row to the header columns by key so rows with differing
-            // keys are not positionally misaligned (absent column => NULL).
-            $rowValues = [];
-            foreach ($columns as $column) {
-                $rowValues[] = isset($row[$column]) ? $row[$column] : null;
-            }
-
+        foreach ($rows as $row) {
             $values[] = ' ('
                 . implode(
                     ', ',
-                    array_map(
-                        function ($value) {
-                            if (\is_null($value)) {
-                                return 'NULL';
-                            }
-
-                            if (\is_array($value) || \is_object($value)) {
-                                $value = wp_json_encode($value);
-                            }
-
-                            $this->bindings[] = $value;
-
-                            return $this->getValueType($value);
-                        },
-                        $rowValues
-                    )
+                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
                 ) . ')';
         }
 
@@ -2014,15 +2513,18 @@ class QueryBuilder
         }
 
         $columnsToPrepare = $this->withoutRelationColumns($columnsToPrepare);
+        $columnsToPrepare = $this->normalizeWriteColumns($columnsToPrepare);
 
         if (property_exists($this->_model, 'timestamps') && $this->_model->timestamps) {
-            if (!$isUpdate) {
+            if (!$isUpdate && !\in_array('created_at', $columnsToPrepare, true)) {
                 $this->_model->setAttribute('created_at', $this->currentTimestamp());
                 $columnsToPrepare[] = 'created_at';
             }
 
             $this->_model->setAttribute('updated_at', $this->currentTimestamp());
-            $columnsToPrepare[] = 'updated_at';
+            if (!\in_array('updated_at', $columnsToPrepare, true)) {
+                $columnsToPrepare[] = 'updated_at';
+            }
         }
 
         $attributes = $this->_model->getAttributes();
@@ -2070,7 +2572,7 @@ class QueryBuilder
     private function prepareInsert()
     {
         $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $this->insert) . ')';
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($this->insert)) . ')';
         $sql .= ' VALUES ('
             . implode(
                 ', ',
@@ -2099,16 +2601,25 @@ class QueryBuilder
      */
     private function prepareUpdate()
     {
+        if (isset($this->_from)) {
+            throw new RuntimeException('Table aliases are not supported for write queries.');
+        }
+
+        $setBindings    = $this->bindings;
+        $this->bindings = [];
+
         $sql = 'UPDATE ' . $this->table;
         $sql .= $this->grammar()->getJoin($this);
         $sql .= ' SET ';
         $columnCount = \count($this->update);
         foreach ($this->update as $key => $column) {
-            if (\is_null($this->bindings[$key])) {
+            $value  = $setBindings[$key];
+            $column = $this->compileWriteColumn($column);
+            if (\is_null($value)) {
                 $sql .= $column . ' = NULL';
-                unset($this->bindings[$key]);
             } else {
-                $sql .= $column . ' = ' . $this->getValueType($this->bindings[$key]);
+                $sql .= $column . ' = ' . $this->getValueType($value);
+                $this->addBindings($value);
             }
 
             if ($key < $columnCount - 1) {
@@ -2128,6 +2639,10 @@ class QueryBuilder
      */
     private function prepareDelete()
     {
+        if (isset($this->_from)) {
+            throw new RuntimeException('Table aliases are not supported for write queries.');
+        }
+
         $whereClause = $this->grammar()->getWhere($this);
 
         if (empty($whereClause)) {

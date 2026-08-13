@@ -17,8 +17,8 @@ if (!\defined('ABSPATH')) {
 }
 
 /**
- * Partial of {@see QueryBuilder} (relies on its $select/$selectRaw state, the
- * bound $_model, and selectRaw()/whereRaw()/prepareColumnName()).
+ * Partial of {@see QueryBuilder} (relies on its structured select state, the
+ * bound $_model, and the identifier/raw-predicate boundaries).
  *
  * @mixin \BitApps\WPDatabase\QueryBuilder
  */
@@ -147,7 +147,7 @@ trait QueriesRelationships
         $this->assertSafeAggregateFunction($function);
 
         if (empty($this->select)) {
-            $this->select = ["`{$this->_model->getTable()}`.*"];
+            $this->select = [$this->_model->getTable() . '.*'];
         }
 
         [$relations, $columns] = $this->normalizeAggregateRelations((array) $relation, $column);
@@ -163,14 +163,11 @@ trait QueriesRelationships
             $this->correlate($relationalQuery);
 
             if ($function === 'exists') {
-                $query = $relationalQuery->select($aggregateColumn)->prepare();
-                $this->selectRaw("exists({$query}) as `{$alias}`")->withCast([$alias => 'bool']);
+                $relationalQuery->select($aggregateColumn);
+                $this->addSubquerySelect($relationalQuery, $alias, true)->withCast([$alias => 'bool']);
             } else {
-                if ($aggregateColumn !== '*') {
-                    $aggregateColumn = $relationalQuery->prepareColumnName($aggregateColumn);
-                }
-                $query = $relationalQuery->selectRaw(sprintf('%s(%s)', $function, $aggregateColumn))->prepare();
-                $this->selectRaw("({$query}) as `{$alias}`");
+                $relationalQuery->addAggregateSelect($function, $aggregateColumn);
+                $this->addSubquerySelect($relationalQuery, $alias);
             }
         }
 

@@ -193,6 +193,13 @@ Contact::where('is_active', 1)->get();   // filtered → Collection
 Every static call on a model opens a builder; chain freely. Use `toSql()` to
 inspect the SQL without executing.
 
+Structured table, column, key, and alias inputs use simple identifier segments
+(`A-Z`, `a-z`, `_`, then letters, digits, or `_`). Qualified columns may join
+segments with dots where the API permits them. Do not pre-quote identifiers with
+backticks or pass expressions through structured arguments. Unknown table/schema
+qualifiers fail closed; register the table through the builder or use an explicit,
+reviewed raw API.
+
 ### Select
 
 ```php
@@ -208,6 +215,12 @@ Contact::selectRaw('SUM(amount) as amt', [])->get();
 > `select()` handles plain columns and `column AS alias`, back-tick-quoting them
 > as identifiers. Pass raw SQL expressions or function calls (`COUNT(*)`, …) to
 > `selectRaw()` instead.
+>
+> Projection channels compile in a stable order regardless of call order:
+> structured `select()` / `addSelect()` columns first, framework-generated
+> relation aggregate/existence columns next, and `selectRaw()` expressions last.
+> Do not rely on method-call order to position a raw expression between generated
+> relation columns.
 
 ### Where
 
@@ -272,7 +285,21 @@ Contact::query()
     ->join('orders', 'orders.contact_id', '=', 'contacts.id')
     ->leftJoin('notes', 'notes.contact_id', '=', 'contacts.id')
     ->get();
-// also: rightJoin(), fullJoin(), crossJoin(), on(), orOn()
+// also: rightJoin(), crossJoin(), on(), orOn()
+
+// Compare a join column with bound values (never interpolated as SQL).
+Contact::query()
+    ->joinWhere('orders', 'orders.status', '=', 'open')
+    ->onValue('orders.priority', '>=', 10)
+    ->orOnValue('orders.kind', '=', 'featured')
+    ->get();
+
+// Developer-controlled expression. Bind every dynamic value.
+Contact::query()
+    ->join('orders', 'orders.contact_id', '=', 'contacts.id')
+    ->onRaw('`wp_orders`.`created_at` < NOW()')
+    ->orOnRaw('`wp_orders`.`priority` > %d', [10])
+    ->get();
 ```
 
 Pass **unprefixed** table names — `join()` prepends the model's full table prefix
@@ -280,8 +307,20 @@ Pass **unprefixed** table names — `join()` prepends the model's full table pre
 `$prefix`). Qualify columns as `table.column` using the **unprefixed** table name:
 the builder resolves a qualifier that matches the model's own table or a joined
 table to its physical, prefixed name in `select`, `where`/`having`, `ON`, `groupBy`
-and `orderBy`. Already-prefixed names, table aliases, and unknown tables are left
-untouched.
+and `orderBy`. Already-prefixed names and registered aliases are recognized;
+unknown/schema-qualified names fail closed. Use `table AS alias` when declaring a
+join alias and `from('alias')` for the base-table alias.
+
+`from()` aliases are supported for SELECT queries. UPDATE and DELETE reject a
+base-table alias before execution because their current compilers do not declare
+one; remove `from()` from write chains.
+
+`join()`, `on()`, and `orOn()` are column-to-column APIs. They no longer guess
+whether the right operand is a number, quoted literal, or SQL function. Move
+constants to `joinWhere()` / `onValue()` and reviewed expressions to `onRaw()`.
+`crossJoin()` keeps this builder's four-operand conditional form and emits
+`CROSS JOIN ... ON ...`, which MySQL accepts as an inner-join synonym; it does
+not create an unqualified Cartesian product.
 
 ### Limit / offset / pagination
 
@@ -365,6 +404,10 @@ Contact::where('is_active', 0)->update(['status' => 'archived']);
 > `update()` on a builder executes immediately (it is not chainable). Set conditions
 > **before** calling it. When updating a model instance through `save()`, the return
 > value is the `Model` on success or `false` on failure.
+>
+> Insert, update, save, bulk-insert, and upsert attribute keys must be simple
+> identifiers. Bulk operations build a stable union of row keys in first-seen
+> order and bind `NULL` for a key missing from a later row.
 
 ---
 
@@ -653,14 +696,65 @@ try {
 ## Raw queries
 
 ```php
-// SELECT → returns result rows
-Contact::query()->raw('SELECT * FROM wp_contacts WHERE id = %d', [1]);
+// Complex developer-authored SQL with typed dynamic structure and bound values.
+Contact::query()->rawPrepared(
+    'SELECT {{identifier:column}} FROM {{identifier:table}}'
+        . ' WHERE {{identifier:status}} = %s'
+        . ' ORDER BY {{identifier:column}} {{direction:sort}}',
+    ['active'],
+    [
+        'column' => 'wp_contacts.created_at',
+        'table'  => 'wp_contacts',
+        'status' => 'wp_contacts.status',
+    ],
+    ['sort' => 'DESC']
+);
 
-// Non-SELECT → returns the wpdb query result
-Contact::query()->raw('UPDATE wp_contacts SET is_active = 1 WHERE id = %d', [1]);
+// Escape a literal percent as %%, including when no values are bound.
+Contact::query()->rawPrepared('SELECT 100 %% 7 AS remainder');
+
+// Reviewed, fully developer-controlled legacy SQL.
+Contact::query()->unsafeRaw(
+    "SELECT `id` FROM `wp_contacts` WHERE `status` = %s AND 'fixed' = 'fixed'",
+    ['active']
+);
 ```
 
-Placeholders use `$wpdb` conventions (`%d`, `%s`, `%f`) with the bindings array.
+`rawPrepared()` is a static-template boundary: the template must be written by a
+developer and must never come from request data, even when a bindings array is
+provided. It accepts only these structural markers:
+
+- `{{identifier:key}}`, compiled from the matching identifier-map entry;
+- `{{direction:key}}`, compiled from the matching direction-map entry as `ASC`
+  or `DESC`.
+
+Marker keys match `[A-Za-z_][A-Za-z0-9_]*`. Every map entry must be used and
+every marker must have a matching entry; duplicate markers reuse one map value.
+Identifiers are quoted by the compiler, so the template itself must not contain
+backticks.
+
+Value placeholders are limited to unnumbered `%s`, `%d`, `%f`, and `%F`; use
+`%%` for a literal percent. The binding count must match the real placeholder
+count exactly. Numbered, flagged, `%i`, dangling, and unknown placeholders are
+rejected before `$wpdb->prepare()` or query execution.
+
+To keep this API conservative rather than pretending to be a SQL lexer, templates
+reject single quotes, double quotes, backticks, `#`, `--`, `/*`, `*/`, unresolved
+braces, and every semicolon except one optional trailing terminator. SQL that
+genuinely requires such static syntax belongs in reviewed `unsafeRaw()` code.
+
+Choose the narrowest boundary:
+
+```text
+structured query -> structured builder APIs
+complex static SQL with dynamic structure -> rawPrepared typed markers
+fully developer-controlled legacy SQL -> unsafeRaw
+request interpolation into raw/unsafeRaw -> unsupported and vulnerable
+```
+
+`raw()` is deprecated and delegates to `unsafeRaw()` for compatibility. Both
+legacy entry points preserve `$wpdb` placeholder behavior, but neither makes an
+interpolated or request-provided SQL string safe.
 
 ---
 
@@ -745,4 +839,3 @@ method relocation.
   (`Connection::getPrefix()`). The `$prefix` property intentionally defaults to `null`
   (not `''`) to preserve bare-table behaviour for plugins that rely on it.
   See [Schema builder reference](schema.md).
-

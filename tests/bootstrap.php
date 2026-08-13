@@ -97,7 +97,7 @@ class FakeWpdb
 
         $index = 0;
 
-        return preg_replace_callback(
+        $prepared = preg_replace_callback(
             '/%[dsfF]/',
             function ($match) use (&$index, $args) {
                 $value = $args[$index] ?? '';
@@ -107,6 +107,8 @@ class FakeWpdb
             },
             $query
         );
+
+        return str_replace('%%', '%', $prepared);
     }
 
     public function get_results($query)

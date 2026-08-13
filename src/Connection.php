@@ -134,7 +134,7 @@ final class Connection
 
     /**
      * Starts transaction
-     * 
+     *
      * @return bool
      */
     public static function startTransaction()
@@ -154,7 +154,7 @@ final class Connection
 
     /**
      * Rollback previously execute query
-     * 
+     *
      * @return void
      */
     public static function rollback()

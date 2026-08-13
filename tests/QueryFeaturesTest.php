@@ -44,8 +44,8 @@ final class QueryFeaturesTest extends TestCase
 
         $this->assertStringContainsString('INNER JOIN', $sql);
         // Unprefixed model/join table names in ON columns resolve to physical.
-        $this->assertStringContainsString('`wp_posts`.user_id', $sql);
-        $this->assertStringContainsString('`wp_users`.id', $sql);
+        $this->assertStringContainsString('`wp_posts`.`user_id`', $sql);
+        $this->assertStringContainsString('`wp_users`.`id`', $sql);
     }
 
     public function testLeftJoinThenWhereKeepsBindingsInOrder(): void
@@ -79,7 +79,7 @@ final class QueryFeaturesTest extends TestCase
         $sql = User::whereHas('posts')->toSql();
 
         $this->assertStringContainsString('exists(', $sql);
-        $this->assertStringContainsString('FROM wp_posts', $sql);
+        $this->assertStringContainsString('FROM `wp_posts`', $sql);
         $this->assertStringContainsString('`wp_users`.`id`=`wp_posts`.`user_id`', $sql);
     }
 
@@ -155,7 +155,7 @@ final class QueryFeaturesTest extends TestCase
         $sql = $GLOBALS['wpdb']->last_query;
 
         $this->assertStringStartsWith('UPDATE wp_users', $sql);
-        $this->assertMatchesRegularExpression('/SET\s+status\s*=/i', $sql);
+        $this->assertMatchesRegularExpression('/SET\s+`status`\s*=/i', $sql);
         $this->assertStringContainsString('WHERE', $sql);
     }
 

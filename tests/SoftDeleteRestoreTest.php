@@ -39,7 +39,7 @@ final class SoftDeleteRestoreTest extends TestCase
         SoftPost::where('id', 1)->restore();
 
         $sql = $GLOBALS['wpdb']->last_query;
-        $this->assertMatchesRegularExpression('/UPDATE\s+wp_soft_posts\s+SET\s+deleted_at\s*=\s*NULL/i', $sql);
+        $this->assertMatchesRegularExpression('/UPDATE\s+wp_soft_posts\s+SET\s+`deleted_at`\s*=\s*NULL/i', $sql);
     }
 
     public function testForceDeleteRejectsNonSoftDeleteModel(): void

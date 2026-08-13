@@ -31,6 +31,8 @@ API and runtime behavior change, it is a **major** version bump.
 | 12 | QueryBuilder | exception type/message changed in `exec()` | Low |
 | 13 | Model | soft-delete reads exclude trashed by default (opt out with `$soft_delete_scope = false`) | Medium |
 | 14 | Composer | minimum PHP raised to **8.0** (was 7.4) — package no longer installs on PHP < 8.0 | High |
+| 15 | QueryBuilder | structured identifiers/operators/joins now fail closed | High |
+| 16 | QueryBuilder | typed `rawPrepared()` added; legacy `raw()` deprecated | High |
 
 ---
 
@@ -134,19 +136,20 @@ Model object on success.
 
 ### 2.4 `select()` back-tick qualifies columns — raw expressions break
 
-`select()` and `addSelect()` pass every column through `prepareColumnName()`,
-which wraps the name as `` `table`.`column` `` unless it already contains a `.`.
+`select()` and `addSelect()` accept only plain/qualified identifiers, an optional
+final wildcard, and explicit `column AS alias`. Every accepted segment is quoted
+and a bare column is qualified with the model table.
 
 ```php
 // Before
 ->select('COUNT(*) as total')   // emitted: COUNT(*) as total
 
 // After
-->select('COUNT(*) as total')   // emitted: `COUNT(*) as total`  ❌ invalid SQL
+->select('COUNT(*) as total')   // throws RuntimeException
 ```
 
-**Why it breaks:** a raw SQL expression or function call passed to `select()` is
-quoted as a single identifier.
+**Why it breaks:** raw expressions, pre-backticked input, implicit aliases, and
+unknown/schema qualifiers now fail closed instead of passing through.
 
 A plain `column AS alias` **is** handled — `prepareColumnName()` qualifies the
 column and keeps the alias separate, so `->select(['id', 'title AS t'])` emits
@@ -159,12 +162,11 @@ column and keeps the alias separate, so `->select(['id', 'title AS t'])` emits
 ->selectRaw('SUM(amount) as amt', $bindings)
 ```
 
-> **Gotcha — an expression may "accidentally" survive:** `prepareColumnName()`
-> passes a column through untouched only when it already contains a `.`. So
-> `select(['CONCAT("https://example.com/…", col) as x'])` emits valid SQL *merely*
-> because the URL contains a dot — the identical code breaks on a dotless host
-> (`http://localhost/…`). Never rely on this; route any function/expression
-> through `selectRaw()`.
+Projection order is channel-based rather than call-based: structured
+`select()` / `addSelect()` columns compile first, generated relation
+aggregate/existence columns compile next, and `selectRaw()` expressions compile
+last. Calling these methods in another order does not interleave the resulting
+columns.
 
 ---
 
@@ -358,6 +360,91 @@ targets `8.0-`.
 
 ---
 
+### 2.15 Structured identifiers, operators, and joins fail closed
+
+Structured query paths now validate and quote base/from/join tables, aliases,
+columns, comparison operators, boolean connectors, and join types. Operators are
+case-normalized from a finite set; comments, extra whitespace, and arbitrary SQL
+fragments throw before a query executes. Base and joined table declarations now
+emit quoted identifiers, so SQL snapshots change even when query semantics do not.
+
+`join()`, `on()`, and `orOn()` are now strictly column-to-column. The previous
+right-operand guessing accepted constants and function calls as unbound SQL.
+Migrate constants to the bound-value APIs and expressions to the explicit raw API:
+
+```php
+// Before: guessed and interpolated as SQL
+->join('orders', 'orders.status', '=', "'open'")
+->on('orders.created_at', '<', 'NOW()')
+
+// After: values are bound
+->joinWhere('orders', 'orders.status', '=', 'open')
+->onValue('orders.priority', '>=', 10)
+
+// After: reviewed developer-authored expression is visibly raw
+->join('orders', 'orders.contact_id', '=', 'contacts.id')
+->onRaw('`wp_orders`.`created_at` < NOW()')
+```
+
+`whereBetween()` and `orWhereBetween()` now retain structured column state and
+bind both bounds; hostile column text can no longer enter their SQL fragment.
+`FULL JOIN` is rejected because MySQL does not support it; use supported
+`INNER`, `LEFT`, `RIGHT`, or `CROSS` joins with a valid ON condition.
+Base-table aliases created with `from()` are SELECT-only; UPDATE and DELETE
+chains using them now throw before execution rather than emit an undeclared alias.
+
+Relationship aliases and pivot table/key/column metadata now use the same strict
+identifier grammar. Pivot metadata accepts simple segments only; dotted keys and
+raw `AS` fragments fail closed. Insert, update, save, bulk-insert, and upsert
+attribute keys are validated too. Multi-row writes use a first-seen union schema
+and represent missing later-row values as `NULL` instead of shifting or dropping
+data.
+
+### 2.16 Typed raw templates and an explicit unsafe escape hatch
+
+`rawPrepared()` is the constrained route for complex, developer-authored SQL.
+Its template is static application code; supplying request-controlled SQL as the
+template is unsupported regardless of bindings.
+
+```php
+$query->rawPrepared(
+    'SELECT {{identifier:column}} FROM {{identifier:table}}'
+        . ' WHERE {{identifier:status}} = %s'
+        . ' ORDER BY {{identifier:column}} {{direction:sort}}',
+    ['active'],
+    [
+        'column' => 'wp_contacts.created_at',
+        'table'  => 'wp_contacts',
+        'status' => 'wp_contacts.status',
+    ],
+    ['sort' => 'DESC']
+);
+```
+
+Only `{{identifier:key}}` and `{{direction:key}}` markers are supported; keys
+match `[A-Za-z_][A-Za-z0-9_]*`. Marker maps are consumed exactly, though repeated
+markers may reuse one entry. Identifier values are strictly validated and quoted;
+directions normalize to `ASC` or `DESC`.
+
+Templates reject single/double quotes, backticks, comment tokens (`#`, `--`,
+`/*`, `*/`), malformed braces, and all semicolons except one optional trailing
+terminator. Use unnumbered `%s`, `%d`, `%f`, or `%F` for values and `%%` for a
+literal percent. Placeholder and binding counts must match exactly before wpdb is
+called. Numbered/flagged placeholders and `%i` are not accepted.
+
+SQL requiring quoted/comment-like static syntax must use reviewed `unsafeRaw()`.
+`raw()` remains functional but is deprecated and delegates to that legacy unsafe
+implementation. Neither accepts request interpolation safely.
+
+```text
+structured query -> structured builder APIs
+complex static SQL with dynamic structure -> rawPrepared typed markers
+fully developer-controlled legacy SQL -> unsafeRaw
+request interpolation into raw/unsafeRaw -> unsupported and vulnerable
+```
+
+---
+
 ## 3. Behavioral changes
 
 Not signature breaks, but observable runtime differences.
@@ -414,10 +501,13 @@ Not signature breaks, but observable runtime differences.
   `insert()` row whose first value is an array no longer crashes.
 - **`take()` / `skip()` cast their argument to `int`** — blocks `LIMIT`/`OFFSET`
   injection; numeric input is byte-identical.
-- **`orderBy()` / `groupBy()` validate the column** as a plain identifier
-  (`^[A-Za-z0-9_.`]+$`) and throw `RuntimeException` otherwise — blocks
-  `ORDER BY`/`GROUP BY` injection. Plain/qualified identifiers emit byte-identical
-  SQL; pass raw expressions through `orderByRaw()`.
+- **`orderBy()` / `groupBy()` use the strict structured identifier renderer.**
+  Accepted bare and qualified columns are resolved against registered
+  base/from/join tables and aliases, then each segment is backtick-quoted. Unknown
+  or schema-qualified names, pre-quoted input, comments, and expressions fail
+  closed with `RuntimeException`; emitted SQL is therefore not byte-identical to
+  the legacy unquoted output. Pass reviewed ordering expressions through
+  `orderByRaw()`.
 - **Cast aliases `integer`/`float`/`double`/`json`/`datetime` now work** (map onto
   the existing casters) — they were previously silent no-ops returning the raw value.
 - **Bulk `insert()` aligns ragged rows by column** — a row whose keys differ from
@@ -526,8 +616,9 @@ User::query()->with('posts')->where('active', 1)->get();
 ### 4.5 Other additions
 
 - **QueryBuilder:** `addSelect()`, `selectRaw()`, `orderByRaw()`, `upsert()`,
-  `when()`, `toSql()`, `clone()`, `aggregate()`, `prepareColumnName()`,
-  `withCast()` (chainable), and `__call()` forwarding to the bound model.
+  `rawPrepared()`, `unsafeRaw()`, `when()`, `toSql()`, `clone()`, `aggregate()`,
+  `prepareColumnName()`, `withCast()` (chainable), and `__call()` forwarding to
+  the bound model.
 - **Model:** `query()` (canonical static builder entry), `toArray()`,
   `getPrefix()`, `getTablePrefix()` (full table prefix — `wp_` + plugin prefix —
   for join/pivot table names), `withCast(array $casts)`, `bool`/`boolean` cast.
@@ -577,6 +668,7 @@ Out of scope (read-only): `attach`/`detach`/`sync`, and
 | `QueryBuilder::startTransaction()` | `Connection::startTransaction()` |
 | `QueryBuilder::commit()` | `Connection::commit()` |
 | `QueryBuilder::rollback()` | `Connection::rollback()` |
+| `QueryBuilder::raw()` | `QueryBuilder::rawPrepared()` or reviewed `QueryBuilder::unsafeRaw()` |
 
 Still functional, but migrate — they may be removed in a future release.
 
@@ -595,6 +687,12 @@ Still functional, but migrate — they may be removed in a future release.
       with raw SQL (§2.5).
 - [ ] Null-check / coalesce values from nullable cast columns (§2.6).
 - [ ] Review non-SELECT `raw()` return handling (§2.7).
+- [ ] Replace legacy `raw()` calls with structured APIs, `rawPrepared()`, or
+      reviewed `unsafeRaw()`; remove every request interpolation (§2.16).
+- [ ] Remove pre-backticks, expressions, and unknown/schema qualifiers from
+      structured identifiers; validate relation/pivot and write keys (§2.15).
+- [ ] Move join constants to `joinWhere()` / `onValue()` and reviewed join
+      expressions to `onRaw()` (§2.15).
 - [ ] Replace the old single-arg `with(Closure)` form and the old `withCount()`
       no-arg call (§2.8, §2.9).
 - [ ] Replace direct `addRelation(string)` calls with `with()` (§2.10).

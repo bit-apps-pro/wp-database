@@ -56,10 +56,14 @@ use RuntimeException;
  * @method static QueryBuilder                  having(...$params)
  * @method static QueryBuilder                  orHaving(...$params)
  * @method static QueryBuilder                  join($table, $first_column, $operator = null, $second_column = null, $type = 'INNER')
+ * @method static QueryBuilder                  joinWhere($table, $first_column, $operator, $value, $type = 'INNER')
  * @method static QueryBuilder                  leftJoin($table, $first_column, $operator = null, $second_column = null)
  * @method static QueryBuilder                  rightJoin($table, $first_column, $operator = null, $second_column = null)
- * @method static QueryBuilder                  fullJoin($table, $first_column, $operator = null, $second_column = null)
  * @method static QueryBuilder                  crossJoin($table, $first_column, $operator = null, $second_column = null)
+ * @method static QueryBuilder                  onValue($first_column, $operator, $value, $bool = 'AND')
+ * @method static QueryBuilder                  orOnValue($first_column, $operator, $value)
+ * @method static QueryBuilder                  onRaw($sql, array $bindings = [], $bool = 'AND')
+ * @method static QueryBuilder                  orOnRaw($sql, array $bindings = [])
  * @method static QueryBuilder                  orderBy($column)
  * @method static QueryBuilder                  orderByRaw($query, $bindings = [])
  * @method static QueryBuilder                  asc()
@@ -303,7 +307,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->table;
     }
 
-    /** Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix). */
+    /**
+     * Query/schema default prefix; NOT the full table prefix — use getTablePrefix() for join/pivot table names (it keeps wp_ for custom $prefix).
+     */
     public function getPrefix()
     {
         return $this->prefix === '' ? Connection::getPrefix() : $this->prefix;

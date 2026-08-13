@@ -63,19 +63,19 @@ final class BelongsToManyPivotTest extends TestCase
         $sql = $GLOBALS['wpdb']->queries[1];
 
         $this->assertStringContainsString('SELECT `wp_roles`.*', $sql);
-        $this->assertStringContainsString('wp_role_user.member_id as `pivot_member_id`', $sql);
-        $this->assertStringContainsString('INNER JOIN wp_role_user', $sql);
-        $this->assertStringContainsString('wp_role_user.role_id = wp_roles.id', $sql);
+        $this->assertStringContainsString('`wp_role_user`.`member_id` AS `pivot_member_id`', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_role_user`', $sql);
+        $this->assertStringContainsString('`wp_role_user`.`role_id` = `wp_roles`.`id`', $sql);
         // Inner fragment without a leading `WHERE ` boundary: the grammar emits `WHERE  ` (double space).
         $this->assertStringContainsString(
-            'wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM wp_members) AS subquery )',
+            '`wp_role_user`.`member_id` IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM `wp_members`) AS subquery )',
             $sql
         );
 
         // Exact pin (absorbs the double-space WHERE/ON grammar artifacts).
-        $expected = 'SELECT `wp_roles`.*, wp_role_user.member_id as `pivot_member_id`'
-            . ' FROM wp_roles INNER JOIN wp_role_user ON  wp_role_user.role_id = wp_roles.id'
-            . ' WHERE  wp_role_user.member_id IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM wp_members) AS subquery )';
+        $expected = 'SELECT `wp_roles`.*,`wp_role_user`.`member_id` AS `pivot_member_id`'
+            . ' FROM `wp_roles` INNER JOIN `wp_role_user` ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
+            . ' WHERE  `wp_role_user`.`member_id` IN ( SELECT * FROM (SELECT `wp_members`.`id` FROM `wp_members`) AS subquery )';
         $this->assertSame($expected, $sql);
     }
 
@@ -92,9 +92,9 @@ final class BelongsToManyPivotTest extends TestCase
         $this->assertStringNotContainsString('subquery', $sql, 'lazy access must not use the IN ( SELECT ) subquery form');
 
         // Exact pin: single-value predicate, double-space WHERE/ON/`=` grammar artifacts.
-        $expected = 'SELECT `wp_roles`.*, wp_role_user.member_id as `pivot_member_id`'
-            . ' FROM wp_roles INNER JOIN wp_role_user ON  wp_role_user.role_id = wp_roles.id'
-            . ' WHERE  wp_role_user.member_id =  1';
+        $expected = 'SELECT `wp_roles`.*,`wp_role_user`.`member_id` AS `pivot_member_id`'
+            . ' FROM `wp_roles` INNER JOIN `wp_role_user` ON  `wp_role_user`.`role_id` = `wp_roles`.`id`'
+            . ' WHERE  `wp_role_user`.`member_id` =  1';
         $this->assertSame($expected, $sql);
     }
 
@@ -115,8 +115,8 @@ final class BelongsToManyPivotTest extends TestCase
         $members = Member::with('rolesDefaultKeys')->get();
         $sql     = $GLOBALS['wpdb']->queries[1];
 
-        $this->assertStringContainsString('wp_role_user.members_id as `pivot_members_id`', $sql);
-        $this->assertStringContainsString('wp_role_user.roles_id = wp_roles.id', $sql);
+        $this->assertStringContainsString('`wp_role_user`.`members_id` AS `pivot_members_id`', $sql);
+        $this->assertStringContainsString('`wp_role_user`.`roles_id` = `wp_roles`.`id`', $sql);
         $this->assertCount(2, $members[0]->rolesDefaultKeys);
         $this->assertCount(1, $members[1]->rolesDefaultKeys);
     }
@@ -128,7 +128,7 @@ final class BelongsToManyPivotTest extends TestCase
         $members = Member::with('rolesWithPivot')->get();
         $sql     = $GLOBALS['wpdb']->queries[1];
 
-        $this->assertStringContainsString('wp_role_user.assigned_at as `pivot_assigned_at`', $sql);
+        $this->assertStringContainsString('`wp_role_user`.`assigned_at` AS `pivot_assigned_at`', $sql);
         $this->assertSame('2024-01-01', $members[0]->rolesWithPivot[0]->pivot_assigned_at);
     }
 

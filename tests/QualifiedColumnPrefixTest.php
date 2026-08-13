@@ -4,20 +4,86 @@ namespace BitApps\WPDatabase\Tests;
 
 use BitApps\WPDatabase\Tests\Fixtures\SoftPost;
 use BitApps\WPDatabase\Tests\Fixtures\User;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * A column qualified by the *unprefixed* model or joined table name
  * (e.g. `users.id` when the physical table is `wp_users`) must resolve to the
- * physical, back-ticked table. Already-physical names, aliases, and unknown
- * tables are left untouched. Pure compilation guards via toSql().
+ * physical table. Already-physical names and aliases are recognized, while
+ * unknown qualifiers fail closed. Every accepted segment is quoted.
  */
 final class QualifiedColumnPrefixTest extends TestCase
 {
+    public static function baseQualifierProvider(): array
+    {
+        return [
+            'logical base table'  => ['users'],
+            'physical base table' => ['wp_users'],
+        ];
+    }
+
+    public static function joinAliasCollisionProvider(): array
+    {
+        return [
+            'logical base name' => [
+                'users',
+                'SELECT `u`.`id`,`users`.`id` FROM `wp_users` `u`',
+                'INNER JOIN `wp_posts` AS `users` ON  `users`.`user_id` = `u`.`id`',
+                'WHERE  `users`.`status` = ',
+            ],
+            'physical base name' => [
+                'wp_users',
+                'SELECT `u`.`id`,`wp_users`.`id` FROM `wp_users` `u`',
+                'INNER JOIN `wp_posts` AS `wp_users` ON  `wp_users`.`user_id` = `u`.`id`',
+                'WHERE  `wp_users`.`status` = ',
+            ],
+        ];
+    }
+
+    #[DataProvider('baseQualifierProvider')]
+    public function testFromAliasRewritesQualifiedBaseColumnsAcrossStructuredClauses($qualifier): void
+    {
+        $sql = (new User())->from('u')
+            ->select($qualifier . '.id')
+            ->join('posts AS p', $qualifier . '.id', '=', 'p.user_id')
+            ->where($qualifier . '.status', 'active')
+            ->groupBy($qualifier . '.id')
+            ->orderBy($qualifier . '.id')
+            ->toSql();
+
+        $this->assertStringContainsString('SELECT `u`.`id` FROM `wp_users` `u`', $sql);
+        $this->assertStringContainsString('ON  `u`.`id` = `p`.`user_id`', $sql);
+        $this->assertStringContainsString('WHERE  `u`.`status` = ', $sql);
+        $this->assertStringContainsString('GROUP BY `u`.`id`', $sql);
+        $this->assertStringContainsString('ORDER BY `u`.`id` ASC', $sql);
+        $this->assertStringNotContainsString('`wp_users`.`id`', $sql);
+    }
+
+    #[DataProvider('joinAliasCollisionProvider')]
+    public function testExplicitJoinAliasWinsWhenItMatchesHiddenBaseName(
+        $alias,
+        $expectedSelect,
+        $expectedJoin,
+        $expectedWhere
+    ): void {
+        $sql = (new User())->from('u')
+            ->join('posts AS ' . $alias, $alias . '.user_id', '=', 'u.id')
+            ->select(['u.id', $alias . '.id'])
+            ->where($alias . '.status', 'published')
+            ->toSql();
+
+        $this->assertStringContainsString($expectedSelect, $sql);
+        $this->assertStringContainsString($expectedJoin, $sql);
+        $this->assertStringContainsString($expectedWhere, $sql);
+        $this->assertStringNotContainsString('ON  `u`.`user_id` = `u`.`id`', $sql);
+    }
+
     public function testWhereResolvesUnprefixedModelTable(): void
     {
         $sql = (new User())->where('users.status', 1)->toSql();
-        $this->assertStringContainsString('`wp_users`.status', $sql);
+        $this->assertStringContainsString('`wp_users`.`status`', $sql);
     }
 
     public function testSelectResolvesModelAndJoinedTable(): void
@@ -25,8 +91,8 @@ final class QualifiedColumnPrefixTest extends TestCase
         $sql = (new User())->join('posts', 'user_id', '=', 'id')
             ->select('users.id', 'posts.title')->toSql();
 
-        $this->assertStringContainsString('`wp_users`.id', $sql);
-        $this->assertStringContainsString('`wp_posts`.title', $sql);
+        $this->assertStringContainsString('`wp_users`.`id`', $sql);
+        $this->assertStringContainsString('`wp_posts`.`title`', $sql);
     }
 
     public function testSelectResolvesRegardlessOfJoinOrder(): void
@@ -34,33 +100,32 @@ final class QualifiedColumnPrefixTest extends TestCase
         $sql = (new User())->select('posts.title')
             ->join('posts', 'user_id', '=', 'id')->toSql();
 
-        $this->assertStringContainsString('`wp_posts`.title', $sql);
+        $this->assertStringContainsString('`wp_posts`.`title`', $sql);
     }
 
     public function testJoinOnResolvesBothSides(): void
     {
         $sql = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->toSql();
 
-        $this->assertStringContainsString('`wp_posts`.user_id', $sql);
-        $this->assertStringContainsString('`wp_users`.id', $sql);
+        $this->assertStringContainsString('`wp_posts`.`user_id`', $sql);
+        $this->assertStringContainsString('`wp_users`.`id`', $sql);
         $this->assertStringNotContainsString(' users.id', $sql);
     }
 
-    public function testAlreadyPhysicalNameUntouched(): void
+    public function testAlreadyPhysicalNameIsRecognizedAndQuoted(): void
     {
         $sql = (new User())->where('wp_users.id', 5)->toSql();
 
-        $this->assertStringContainsString('wp_users.id', $sql);
+        $this->assertStringContainsString('`wp_users`.`id`', $sql);
         $this->assertStringNotContainsString('wp_wp_users', $sql);
-        $this->assertStringNotContainsString('`wp_users`.id', $sql);
     }
 
     public function testAliasShadowingModelNameWins(): void
     {
         $sql = (new User())->from('users')->where('users.id', 5)->toSql();
 
-        $this->assertStringContainsString(' users.id', $sql);
-        $this->assertStringNotContainsString('`wp_users`.id', $sql);
+        $this->assertStringContainsString(' `users`.`id`', $sql);
+        $this->assertStringNotContainsString('`wp_users`.`id`', $sql);
     }
 
     public function testGroupByResolvesJoinedTable(): void
@@ -68,7 +133,7 @@ final class QualifiedColumnPrefixTest extends TestCase
         $sql = (new User())->join('posts', 'user_id', '=', 'id')
             ->groupBy('posts.status')->toSql();
 
-        $this->assertStringContainsString('GROUP BY `wp_posts`.status', $sql);
+        $this->assertStringContainsString('GROUP BY `wp_posts`.`status`', $sql);
     }
 
     public function testOrderByResolvesJoinedTable(): void
@@ -76,22 +141,19 @@ final class QualifiedColumnPrefixTest extends TestCase
         $sql = (new User())->join('posts', 'user_id', '=', 'id')
             ->orderBy('posts.title')->toSql();
 
-        $this->assertStringContainsString('ORDER BY `wp_posts`.title', $sql);
+        $this->assertStringContainsString('ORDER BY `wp_posts`.`title`', $sql);
     }
 
-    public function testResolveQualifierIsIdempotent(): void
+    public function testResolveQualifierRejectsPreQuotedInput(): void
     {
-        $qb    = User::query();
-        $once  = $qb->resolveQualifier('users.id');
-        $twice = $qb->resolveQualifier($once);
+        $this->expectException(RuntimeException::class);
 
-        $this->assertSame('`wp_users`.id', $once);
-        $this->assertSame($once, $twice);
+        User::query()->resolveQualifier('`wp_users`.`id`');
     }
 
-    public function testResolveQualifierLeavesUnqualifiedColumnAlone(): void
+    public function testResolveQualifierQualifiesBareColumn(): void
     {
-        $this->assertSame('id', User::query()->resolveQualifier('id'));
+        $this->assertSame('`wp_users`.`id`', User::query()->resolveQualifier('id'));
     }
 
     public function testJoinedTableResolvesInsideNestedClosure(): void
@@ -101,7 +163,7 @@ final class QualifiedColumnPrefixTest extends TestCase
                 $q->where('posts.status', 1);
             })->toSql();
 
-        $this->assertStringContainsString('`wp_posts`.status', $sql);
+        $this->assertStringContainsString('`wp_posts`.`status`', $sql);
     }
 
     public function testJoinedTableResolvesUnderSoftDeleteScope(): void
@@ -109,6 +171,6 @@ final class QualifiedColumnPrefixTest extends TestCase
         $sql = (new SoftPost())->join('users', 'post_id', '=', 'id')
             ->where('users.role', 'admin')->toSql();
 
-        $this->assertStringContainsString('`wp_users`.role', $sql);
+        $this->assertStringContainsString('`wp_users`.`role`', $sql);
     }
 }

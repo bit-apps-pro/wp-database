@@ -6,6 +6,7 @@ use BitApps\WPDatabase\Tests\Fixtures\PrefixedModel;
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use FakeWpdb;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Characterization of SELECT column preparation (aliases), JOIN variants/ON
@@ -25,9 +26,11 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     // --- Select aliases ------------------------------------------------------
 
-    public function testDottedColumnAliasKeepsDotUnquotedAliasBackticked(): void
+    public function testUnknownDottedColumnAliasFailsClosed(): void
     {
-        $this->assertStringContainsString('t.col AS `a`', (new User())->select(['t.col AS a'])->toSql());
+        $this->expectException(RuntimeException::class);
+
+        (new User())->select(['t.col AS a'])->toSql();
     }
 
     public function testLowercaseAsNormalisesToUppercase(): void
@@ -35,19 +38,25 @@ final class SelectJoinAggregateEdgeTest extends TestCase
         $this->assertStringContainsString('`wp_users`.`col` AS `a`', (new User())->select(['col as a'])->toSql());
     }
 
-    public function testAlreadyBacktickedAliasIsNotDoubleQuoted(): void
+    public function testAlreadyBacktickedAliasIsRejected(): void
     {
-        $this->assertStringContainsString('`wp_users`.`col` AS `a`', (new User())->select(['col AS `a`'])->toSql());
+        $this->expectException(RuntimeException::class);
+
+        (new User())->select(['col AS `a`'])->toSql();
     }
 
-    public function testAliasWithSpacesIsBacktickedWhole(): void
+    public function testAliasWithSpacesIsRejected(): void
     {
-        $this->assertStringContainsString('`wp_users`.`col` AS `the alias`', (new User())->select(['col AS the alias'])->toSql());
+        $this->expectException(RuntimeException::class);
+
+        (new User())->select(['col AS the alias'])->toSql();
     }
 
-    public function testMultipleAsSplitsOnFirst(): void
+    public function testMultipleAsIsRejected(): void
     {
-        $this->assertStringContainsString('`wp_users`.`a` AS `b as c`', (new User())->select(['a as b as c'])->toSql());
+        $this->expectException(RuntimeException::class);
+
+        (new User())->select(['a as b as c'])->toSql();
     }
 
     public function testSelectThenSelectRawJoinedByComma(): void
@@ -57,7 +66,7 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     public function testEmptySelectEmitsQualifiedNothing(): void
     {
-        $this->assertStringContainsString('SELECT  FROM wp_users', (new User())->toSql());
+        $this->assertStringContainsString('SELECT  FROM `wp_users`', (new User())->toSql());
     }
 
     public function testPrepareColumnNameStarStaysQualifiedStar(): void
@@ -67,29 +76,28 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     // --- Joins ---------------------------------------------------------------
 
-    public function testRightFullCrossJoinKeywords(): void
+    public function testRightAndCrossJoinKeywords(): void
     {
-        $this->assertStringContainsString('RIGHT JOIN wp_posts', (new User())->rightJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
-        $this->assertStringContainsString('FULL JOIN wp_posts', (new User())->fullJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
-        $this->assertStringContainsString('CROSS JOIN wp_posts', (new User())->crossJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
+        $this->assertStringContainsString('RIGHT JOIN `wp_posts`', (new User())->rightJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
+        $this->assertStringContainsString('CROSS JOIN `wp_posts`', (new User())->crossJoin('posts', 'posts.user_id', '=', 'users.id')->toSql());
     }
 
     public function testOnAndOrOnAppendToSameJoin(): void
     {
         // Unprefixed model/join table names in ON columns resolve to physical.
         $and = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->on('posts.status', '=', 'users.state')->toSql();
-        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id AND `wp_posts`.status = `wp_users`.state', $and);
+        $this->assertStringContainsString('`wp_posts`.`user_id` = `wp_users`.`id` AND `wp_posts`.`status` = `wp_users`.`state`', $and);
 
         $or = (new User())->join('posts', 'posts.user_id', '=', 'users.id')->orOn('posts.status', '=', 'users.state')->toSql();
-        $this->assertStringContainsString('`wp_posts`.user_id = `wp_users`.id OR `wp_posts`.status = `wp_users`.state', $or);
+        $this->assertStringContainsString('`wp_posts`.`user_id` = `wp_users`.`id` OR `wp_posts`.`status` = `wp_users`.`state`', $or);
     }
 
     public function testJoinOnCustomPrefixModelQualifiesBaseColumnWithFullPrefix(): void
     {
         $sql = (new PrefixedModel())->join('gadgets', 'gid', '=', 'wid')->toSql();
 
-        $this->assertStringContainsString('INNER JOIN wp_crm_gadgets', $sql);
-        $this->assertStringContainsString('`wp_crm_widgets`.`gid` = wp_crm_gadgets.wid', $sql);
+        $this->assertStringContainsString('INNER JOIN `wp_crm_gadgets`', $sql);
+        $this->assertStringContainsString('`wp_crm_widgets`.`gid` = `wp_crm_gadgets`.`wid`', $sql);
     }
 
     // --- Aggregates / ordering ----------------------------------------------
@@ -143,7 +151,7 @@ final class SelectJoinAggregateEdgeTest extends TestCase
 
     public function testAscFallsBackToPrimaryKey(): void
     {
-        $this->assertStringContainsString('ORDER BY id ASC', (new User())->asc()->toSql());
+        $this->assertStringContainsString('ORDER BY `wp_users`.`id` ASC', (new User())->asc()->toSql());
     }
 
     public function testSkipWithoutTakeOmitsOffset(): void

@@ -104,11 +104,11 @@ final class WhereClauseEdgeTest extends TestCase
     public function testWhereBetweenAndOrWhereBetween(): void
     {
         $qb = (new User())->whereBetween('age', 18, 65);
-        $this->assertStringContainsString('(age BETWEEN %d AND %d)', $qb->toSql());
+        $this->assertStringContainsString('`wp_users`.`age` BETWEEN %d AND %d', $qb->toSql());
         $this->assertSame([18, 65], $qb->getBindings());
 
         $qb2 = (new User())->where('id', 1)->orWhereBetween('age', 18, 65);
-        $this->assertStringContainsString('OR  (age BETWEEN %d AND %d)', $qb2->toSql());
+        $this->assertStringContainsString('OR `wp_users`.`age` BETWEEN %d AND %d', $qb2->toSql());
         $this->assertSame([1, 18, 65], $qb2->getBindings());
     }
 

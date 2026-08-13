@@ -8,8 +8,8 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 /**
- * E2: orderBy()/groupBy() reject non-identifier columns (injection guard) while
- * leaving every currently-valid identifier byte-identical.
+ * E2: orderBy()/groupBy() reject non-identifiers and qualifiers outside the
+ * query context, while valid columns render as fully qualified identifiers.
  */
 final class OrderGroupInjectionFixTest extends TestCase
 {
@@ -37,31 +37,31 @@ final class OrderGroupInjectionFixTest extends TestCase
         User::query()->groupBy('a); DROP');
     }
 
-    public function testOrderByPlainColumnUnchanged(): void
+    public function testOrderByPlainColumnIsQualified(): void
     {
         $sql = User::query()->orderBy('id', 'DESC')->toSql();
 
-        $this->assertStringContainsString('ORDER BY id ASC', $sql);
+        $this->assertStringContainsString('ORDER BY `wp_users`.`id` ASC', $sql);
     }
 
-    public function testOrderByQualifiedColumnUnchanged(): void
+    public function testOrderByUnknownQualifiedColumnFailsClosed(): void
     {
-        $sql = User::query()->orderBy('t.col')->toSql();
+        $this->expectException(RuntimeException::class);
 
-        $this->assertStringContainsString('ORDER BY t.col ASC', $sql);
+        User::query()->orderBy('t.col')->toSql();
     }
 
-    public function testGroupByPlainColumnUnchanged(): void
+    public function testGroupByPlainColumnIsQualified(): void
     {
         $sql = User::query()->groupBy('contact_id')->toSql();
 
-        $this->assertStringContainsString('GROUP BY contact_id', $sql);
+        $this->assertStringContainsString('GROUP BY `wp_users`.`contact_id`', $sql);
     }
 
-    public function testGroupByQualifiedColumnUnchanged(): void
+    public function testGroupByUnknownQualifiedColumnFailsClosed(): void
     {
-        $sql = User::query()->groupBy('wp_x.module')->toSql();
+        $this->expectException(RuntimeException::class);
 
-        $this->assertStringContainsString('GROUP BY wp_x.module', $sql);
+        User::query()->groupBy('wp_x.module')->toSql();
     }
 }

@@ -28,10 +28,18 @@ class Grammar
     {
         $query->resetBindings();
 
-        $columns = array_map([$query, 'resolveQualifier'], $query->select);
-        $sql     = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . implode(',', $columns);
-        $sql .= $this->prepareRawSelect($query);
-        $sql .= ' FROM ' . $query->getTable();
+        $columns = array_map(static function ($column) use ($query) {
+            return $query->renderIdentifier($column, true, true);
+        }, $query->select);
+        $structuredSql = implode(',', $columns);
+        foreach ($query->getSelectExpressions() as $expression) {
+            $structuredSql .= $structuredSql === '' ? '' : ', ';
+            $structuredSql .= $this->prepareSelectExpression($query, $expression);
+        }
+
+        $sql = 'SELECT ' . ($query->isDistinct() ? 'DISTINCT ' : '') . $structuredSql;
+        $sql .= $this->prepareRawSelect($query, $structuredSql !== '');
+        $sql .= ' FROM ' . Identifier::quoteQualified($query->getTable());
         $sql .= $this->getFrom($query);
         $sql .= $this->getJoin($query);
         $sql .= $this->getWhere($query);
@@ -73,8 +81,12 @@ class Grammar
         }
 
         foreach ($joins as $join) {
-            $sql .= ' ' . $join['type'] . ' JOIN ' . $join['table']
-                . ' ON ' . $this->processConditions($query, $join['on']);
+            $sql .= ' ' . JoinType::normalize($join['type']) . ' JOIN '
+                . Identifier::quoteQualified($join['table']);
+            if ($join['userAlias'] !== null) {
+                $sql .= ' AS ' . Identifier::quoteAlias($join['userAlias']);
+            }
+            $sql .= ' ON ' . $this->processConditions($query, $join['on']);
         }
 
         return $sql;
@@ -149,7 +161,9 @@ class Grammar
             return '';
         }
 
-        return ' GROUP BY ' . implode(',', array_map([$query, 'resolveQualifier'], $groupBy));
+        return ' GROUP BY ' . implode(',', array_map(static function ($column) use ($query) {
+            return $query->renderIdentifier($column);
+        }, $groupBy));
     }
 
     /**
@@ -185,7 +199,7 @@ class Grammar
                 $sql .= $order['raw'] . ', ';
                 $query->addBindings($order['bindings']);
             } elseif (isset($order['column'])) {
-                $sql .= $query->resolveQualifier($order['column']) . ' ' . $order['direction'] . ', ';
+                $sql .= $query->renderIdentifier($order['column']) . ' ' . $order['direction'] . ', ';
             }
         }
 
@@ -201,7 +215,7 @@ class Grammar
     {
         $alias = $query->getFromAlias();
 
-        return isset($alias) ? " {$alias}" : null;
+        return isset($alias) ? ' ' . Identifier::quoteAlias($alias) : null;
     }
 
     /**
@@ -232,13 +246,15 @@ class Grammar
     /**
      * Compiles the raw select columns and merges their bindings.
      *
+     * @param mixed $hasStructuredSelect
+     *
      * @return string
      */
-    private function prepareRawSelect(QueryBuilder $query)
+    private function prepareRawSelect(QueryBuilder $query, $hasStructuredSelect = false)
     {
         $sql = '';
         if (!empty($query->selectRaw['columns'])) {
-            $sql = \count($query->select) ? ', ' : '';
+            $sql = $hasStructuredSelect ? ', ' : '';
             $sql .= implode(', ', $query->selectRaw['columns']);
         }
 
@@ -247,6 +263,35 @@ class Grammar
         }
 
         return $sql;
+    }
+
+    /**
+     * Compiles a framework-generated SELECT expression from typed state.
+     *
+     * @param array $expression
+     *
+     * @return string
+     */
+    private function prepareSelectExpression(QueryBuilder $query, array $expression)
+    {
+        if ($expression['type'] === 'aggregate') {
+            $column = $expression['column'] === '*'
+                ? '*'
+                : $query->renderIdentifier($expression['column']);
+            $sql = $expression['function'] . '(' . $column . ')';
+            if ($expression['alias'] !== null) {
+                $sql .= ' AS ' . Identifier::quoteAlias($expression['alias']);
+            }
+
+            return $sql;
+        }
+
+        $subquery = $expression['query'];
+        $sql      = $subquery->toSql();
+        $query->addBindings($subquery->getBindings());
+        $sql = $expression['exists'] ? 'exists(' . $sql . ')' : '(' . $sql . ')';
+
+        return $sql . ' as ' . Identifier::quoteAlias($expression['alias']);
     }
 
     /**
@@ -259,7 +304,7 @@ class Grammar
     private function prepareColumnForWhere(QueryBuilder $query, $clause)
     {
         if (isset($clause['column'])) {
-            return ' ' . $query->resolveQualifier($query->prepareColumnName($clause['column']));
+            return ' ' . $query->renderIdentifier($clause['column']);
         }
     }
 
@@ -277,14 +322,22 @@ class Grammar
             return $sql;
         }
 
-        if (isset($clause['operator'])) {
-            $sql .= ' ' . $clause['operator'];
+        if (isset($clause['between'])) {
+            $sql .= ' ' . SqlOperator::normalizeRange($clause['operator']);
+        } elseif (isset($clause['secondColumn'])) {
+            $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
+        } elseif (!\array_key_exists('value', $clause)) {
+            $sql .= ' ' . SqlOperator::normalizeUnary($clause['operator']);
         } elseif (\is_array($clause['value'])) {
-            $sql .= ' IN ';
-        } elseif (\is_null($clause['value'])) {
-            $sql = ' IS NULL';
+            if (isset($clause['operator'])) {
+                $sql .= ' ' . SqlOperator::normalizeList($clause['operator']);
+            } else {
+                $sql .= ' ' . SqlOperator::normalizeList('IN') . ' ';
+            }
+        } elseif (isset($clause['operator'])) {
+            $sql .= ' ' . SqlOperator::normalizeBinary($clause['operator']);
         } else {
-            $sql .= ' = ';
+            $sql .= ' ' . SqlOperator::normalizeBinary('=') . ' ';
         }
 
         return $sql;
@@ -301,7 +354,14 @@ class Grammar
     {
         $sql = '';
         if (isset($clause['secondColumn'])) {
-            return ' ' . $query->resolveQualifier($clause['secondColumn']);
+            return ' ' . $query->renderIdentifier($clause['secondColumn']);
+        }
+
+        if (isset($clause['between'])) {
+            [$start, $end] = $clause['between'];
+            $query->addBindings([$start, $end]);
+
+            return ' ' . $query->getValueType($start) . ' AND ' . $query->getValueType($end);
         }
 
         if (!isset($clause['value'])) {
@@ -316,11 +376,6 @@ class Grammar
             }
 
             $sql = rtrim($sql, ',') . ')';
-        } elseif (isset($clause['operator']) && strpos($clause['operator'], 'IS') !== false) {
-            $sql .= ' ' . $clause['value'];
-        } elseif (isset($clause['operator']) && strtoupper($clause['operator']) === 'LIKE') {
-            $sql .= ' %s';
-            $query->addBindings($clause['value']);
         } elseif (!\is_null($clause['value'])) {
             $sql .= ' ' . $query->getValueType($clause['value']);
             $query->addBindings($clause['value']);

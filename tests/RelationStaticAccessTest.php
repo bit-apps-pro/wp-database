@@ -73,24 +73,24 @@ final class RelationStaticAccessTest extends TestCase
 
     public function testWithCountStaticSqlMatchesBaseline(): void
     {
-        $expected = 'SELECT `wp_users`.*, (SELECT count(*) FROM wp_posts WHERE  '
-            . '`wp_users`.`id`=`wp_posts`.`user_id`) as `posts_count` FROM wp_users';
+        $expected = 'SELECT `wp_users`.*, (SELECT count(*) FROM `wp_posts` WHERE  '
+            . '`wp_users`.`id`=`wp_posts`.`user_id`) as `posts_count` FROM `wp_users`';
 
         $this->assertSame($expected, User::withCount('posts')->toSql());
     }
 
     public function testWhereHasStaticSqlMatchesBaseline(): void
     {
-        $expected = 'SELECT  FROM wp_users WHERE  exists(SELECT `wp_posts`.* FROM '
-            . 'wp_posts WHERE  `wp_users`.`id`=`wp_posts`.`user_id`)';
+        $expected = 'SELECT  FROM `wp_users` WHERE  exists(SELECT `wp_posts`.* FROM '
+            . '`wp_posts` WHERE  `wp_users`.`id`=`wp_posts`.`user_id`)';
 
         $this->assertSame($expected, User::whereHas('posts')->toSql());
     }
 
     public function testWithExistsStaticSqlMatchesBaseline(): void
     {
-        $expected = 'SELECT `wp_users`.*, exists(SELECT `wp_posts`.* FROM wp_posts '
-            . 'WHERE  `wp_users`.`id`=`wp_posts`.`user_id`) as `posts_exists` FROM wp_users';
+        $expected = 'SELECT `wp_users`.*, exists(SELECT `wp_posts`.* FROM `wp_posts` '
+            . 'WHERE  `wp_users`.`id`=`wp_posts`.`user_id`) as `posts_exists` FROM `wp_users`';
 
         $this->assertSame($expected, User::withExists('posts')->toSql());
     }

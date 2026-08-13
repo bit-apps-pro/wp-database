@@ -35,9 +35,9 @@ final class RaggedBulkInsertFixTest extends TestCase
 
         $sql = $GLOBALS['wpdb']->last_query;
 
-        $this->assertStringContainsString('(a, b)', $sql);
-        $this->assertStringContainsString("('x', 'y')", $sql);
-        $this->assertStringContainsString("(NULL, 'z')", $sql);
+        $this->assertStringContainsString('(`a`, `b`, `c`)', $sql);
+        $this->assertStringContainsString("('x', 'y', NULL)", $sql);
+        $this->assertStringContainsString("(NULL, 'z', 'w')", $sql);
         $this->assertStringNotContainsString("('z'", $sql);
     }
 }
