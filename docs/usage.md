@@ -194,7 +194,8 @@ Every static call on a model opens a builder; chain freely. Use `toSql()` to
 inspect the SQL without executing.
 
 Structured table, column, key, and alias inputs use simple identifier segments
-(`A-Z`, `a-z`, `_`, then letters, digits, or `_`). Qualified columns may join
+(letters, digits, and `_`; may start with a digit — host-generated WordPress
+prefixes such as `5c_` do — but never all digits). Qualified columns may join
 segments with dots where the API permits them. Do not pre-quote identifiers with
 backticks or pass expressions through structured arguments. Unknown table/schema
 qualifiers fail closed; register the table through the builder or use an explicit,

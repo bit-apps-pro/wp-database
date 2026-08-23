@@ -10,9 +10,17 @@ if (!\defined('ABSPATH')) {
 
 final class Identifier
 {
+    /**
+     * Accepts one unqualified identifier segment.
+     *
+     * A leading digit is allowed because every segment is emitted backtick
+     * quoted and hosts do generate WordPress prefixes such as `5c_`. An
+     * all-digit segment stays invalid, matching MySQL and keeping numeric
+     * literals from passing where a column is expected.
+     */
     public static function assertSimple(string $value): void
     {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $value)) {
+        if (!preg_match('/^(?![0-9]+$)[A-Za-z0-9_]+$/', $value)) {
             throw new RuntimeException('Invalid SQL identifier.');
         }
     }

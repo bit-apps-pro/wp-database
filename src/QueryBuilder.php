@@ -2022,7 +2022,7 @@ class QueryBuilder
     private function parseJoinTable($table)
     {
         if (!\is_string($table)
-            || !preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/i', $table, $matches)
+            || !preg_match('/^([A-Za-z0-9_]+)(?:\s+AS\s+([A-Za-z0-9_]+))?$/i', $table, $matches)
         ) {
             throw new RuntimeException('Invalid SQL join table declaration.');
         }

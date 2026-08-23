@@ -17,9 +17,11 @@ final class IdentifierTest extends TestCase
     public static function simpleIdentifierProvider(): array
     {
         return [
-            'letter'     => ['id'],
-            'underscore' => ['_private'],
-            'mixed'      => ['Custom_Field_12'],
+            'letter'        => ['id'],
+            'underscore'    => ['_private'],
+            'mixed'         => ['Custom_Field_12'],
+            'leading digit' => ['1id'],
+            'digit prefix'  => ['5c_bit_pi_flows'],
         ];
     }
 
@@ -35,7 +37,7 @@ final class IdentifierTest extends TestCase
     {
         return [
             'empty'             => [''],
-            'leading digit'     => ['1id'],
+            'all digits'        => ['5'],
             'empty segment'     => ['user..id'],
             'implicit alias'    => ['id alias'],
             'pre-backticked'    => ['`id`'],
@@ -60,6 +62,7 @@ final class IdentifierTest extends TestCase
         return [
             'simple'          => ['id', '`id`'],
             'qualified'       => ['users.id', '`users`.`id`'],
+            'digit prefix'    => ['5c_bit_pi_flows.id', '`5c_bit_pi_flows`.`id`'],
             'multiple levels' => ['catalog.users.id', '`catalog`.`users`.`id`'],
         ];
     }
