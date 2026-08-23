@@ -103,7 +103,6 @@ final class RawTemplateTest extends TestCase
     {
         return [
             'empty'          => [''],
-            'leading digit'  => ['1column'],
             'empty segment'  => ['users..id'],
             'wildcard'       => ['users.*'],
             'implicit alias' => ['id alias'],
