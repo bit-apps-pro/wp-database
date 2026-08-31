@@ -1403,6 +1403,36 @@ class QueryBuilder
     }
 
     /**
+     * Inserts one or many rows, silently skipping any that collide with a unique
+     * or primary key (`INSERT IGNORE`); values are normalized and bound like insert().
+     *
+     * @param array $attributes row or list of rows to insert
+     *
+     * @return mixed number of rows inserted, or false on empty input
+     */
+    public function insertOrIgnore(array $attributes)
+    {
+        if (empty($attributes)) {
+            return false;
+        }
+
+        $rows = $this->isListOfRows($attributes) ? $attributes : [$attributes];
+
+        [$columns, $normalizedRows, $callerColumns] = $this->normalizeWriteRows(
+            $rows,
+            property_exists($this->_model, 'timestamps') && $this->_model->timestamps ? ['created_at'] : []
+        );
+        if (empty($callerColumns)) {
+            return false;
+        }
+
+        $this->bindings = [];
+        $sql            = $this->compileInsertValues($columns, $normalizedRows, true);
+
+        return $this->unsafeRaw($sql, $this->bindings);
+    }
+
+    /**
      * Runs update query for model
      *
      * @param array $attributes
@@ -1732,20 +1762,7 @@ class QueryBuilder
         }
 
         $this->bindings = [];
-        $sql            = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
-
-        $sql .= ' VALUES ';
-        $insertAbleValues = [];
-        foreach ($rows as $row) {
-            $insertAbleValues[] = ' ('
-                . implode(
-                    ', ',
-                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
-                ) . ')';
-        }
-
-        $sql .= empty($insertAbleValues) ? ' default values' : ' ' . implode(',', $insertAbleValues);
+        $sql            = $this->compileInsertValues($columns, $rows);
         $sql .= ' ON DUPLICATE KEY UPDATE ';
         $sql .= implode(', ', array_map(function ($column) {
             $column = $this->compileWriteColumn($column);
@@ -1755,6 +1772,49 @@ class QueryBuilder
         $sql .= ';';
 
         return $this->raw($sql, $this->bindings);
+    }
+
+    /**
+     * Upserts rows, applying developer-authored SQL expressions on duplicate key
+     * (e.g. an atomic `hits = hits + 1` counter) instead of `VALUES(col)`. The
+     * update set is exactly the caller's $expressions, so updated_at is never
+     * auto-bumped — include it explicitly to touch it.
+     *
+     * @param array $values      row or list of rows to insert
+     * @param array $expressions column => string|array{0: string, 1: array} update map
+     *
+     * @return mixed number of affected rows, or false on empty input
+     */
+    public function upsertRaw(array $values, array $expressions)
+    {
+        if (empty($values)) {
+            return false;
+        }
+
+        if (empty($expressions)) {
+            throw new RuntimeException('upsertRaw requires at least one update expression.');
+        }
+
+        if (!$this->isListOfRows($values)) {
+            $values = [$values];
+        }
+
+        $manageTimestamps = property_exists($this->_model, 'timestamps') && $this->_model->timestamps;
+        [$columns, $rows] = $this->normalizeWriteRows(
+            $values,
+            $manageTimestamps ? ['created_at', 'updated_at'] : []
+        );
+        if (empty($columns)) {
+            return false;
+        }
+
+        $this->bindings = [];
+        $sql            = $this->compileInsertValues($columns, $rows);
+        $sql .= ' ON DUPLICATE KEY UPDATE ';
+        $sql .= implode(', ', $this->compileUpdateExpressions($expressions));
+        $sql .= ';';
+
+        return $this->unsafeRaw($sql, $this->bindings);
     }
 
     /**
@@ -2436,6 +2496,82 @@ class QueryBuilder
     }
 
     /**
+     * Compiles a placeholder-bound `INSERT [IGNORE] INTO ... VALUES ...` statement
+     * and appends each row's bound values to $this->bindings in column order.
+     *
+     * @param array $columns
+     * @param array $rows
+     * @param bool  $ignore
+     *
+     * @return string
+     */
+    private function compileInsertValues(array $columns, array $rows, bool $ignore = false)
+    {
+        $sql = 'INSERT ' . ($ignore ? 'IGNORE ' : '') . 'INTO ' . $this->table;
+        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
+        $sql .= ' VALUES ';
+
+        $values = [];
+        foreach ($rows as $row) {
+            $values[] = ' ('
+                . implode(', ', array_map(fn ($value) => $this->compileWriteValue($value), $row))
+                . ')';
+        }
+
+        return $sql . (empty($values) ? ' default values' : ' ' . implode(',', $values));
+    }
+
+    /**
+     * Compiles a column => expression map into `col = <expr>` duplicate-key update
+     * fragments, appending any expression bindings after the already-bound insert
+     * values and hardening each expression through RawTemplate.
+     *
+     * @param array $expressions
+     *
+     * @return array
+     */
+    private function compileUpdateExpressions(array $expressions)
+    {
+        $fragments = [];
+        foreach ($expressions as $column => $expression) {
+            [$template, $bindings] = $this->normalizeUpdateExpression($expression);
+            $fragments[]           = $this->compileWriteColumn($column)
+                . ' = ' . RawTemplate::compile($template, $bindings);
+            foreach ($bindings as $binding) {
+                $this->bindings[] = $binding;
+            }
+        }
+
+        return $fragments;
+    }
+
+    /**
+     * Normalizes an update expression into a [template, bindings] pair, accepting a
+     * bare expression string or an [expression, bindings] tuple.
+     *
+     * @param mixed $expression
+     *
+     * @return array
+     */
+    private function normalizeUpdateExpression($expression)
+    {
+        if (\is_string($expression)) {
+            return [$expression, []];
+        }
+
+        if (\is_array($expression) && isset($expression[0]) && \is_string($expression[0])) {
+            $bindings = $expression[1] ?? [];
+            if (!\is_array($bindings)) {
+                throw new RuntimeException('Update expression bindings must be an array.');
+            }
+
+            return [$expression[0], array_values($bindings)];
+        }
+
+        throw new RuntimeException('Invalid update expression.');
+    }
+
+    /**
      * Run bulk insert query
      *
      * @param array $attributes
@@ -2453,20 +2589,7 @@ class QueryBuilder
         }
 
         $this->bindings = [];
-
-        $sql = 'INSERT INTO ' . $this->table;
-        $sql .= ' (' . implode(', ', $this->compileWriteColumns($columns)) . ')';
-        $sql .= ' VALUES ';
-        $values = [];
-        foreach ($rows as $row) {
-            $values[] = ' ('
-                . implode(
-                    ', ',
-                    array_map(fn ($value) => $this->compileWriteValue($value), $row)
-                ) . ')';
-        }
-
-        $sql .= empty($values) ? ' default values' : ' ' . implode(',', $values);
+        $sql            = $this->compileInsertValues($columns, $rows);
 
         if ($this->raw($sql, $this->bindings) !== false) {
             $nextID       = $this->lastInsertId();

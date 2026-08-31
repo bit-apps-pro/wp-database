@@ -149,6 +149,13 @@ $created = Contact::insert([
     ['first_name' => 'Ada',  'email' => 'ada@x.com'],
     ['first_name' => 'Grace','email' => 'grace@x.com'],
 ]);
+
+// INSERT IGNORE — skip any row that collides with a unique/primary key. Single row or an array of rows.
+Contact::query()->insertOrIgnore(['email' => 'ada@x.com', 'first_name' => 'Ada']);
+Contact::query()->insertOrIgnore([
+    ['email' => 'ada@x.com',   'first_name' => 'Ada'],
+    ['email' => 'grace@x.com', 'first_name' => 'Grace'],
+]);
 ```
 
 `save()` inserts when the model is new and updates (dirty attributes only) when
@@ -467,6 +474,31 @@ Contact::query()->upsert([
 On a model with `$timestamps = true`, `upsert()` sets both `created_at` and
 `updated_at` on insert, and on a duplicate key it bumps `updated_at`
 (`updated_at = VALUES(updated_at)`) while preserving the original `created_at`.
+
+### Expression updates (`upsertRaw`)
+
+When the duplicate-key update must reference the existing row — e.g. an atomic
+counter — use `upsertRaw()`. The second argument is a `column => expression` map
+applied on conflict instead of `VALUES(col)`. Bind values inside an expression
+with the `[expression, bindings]` form.
+
+```php
+Contact::query()->upsertRaw(
+    ['email' => 'a@x.com', 'hits' => 1],   // unique key: email
+    ['hits' => 'hits + 1']                 // ON DUPLICATE KEY UPDATE `hits` = hits + 1
+);
+
+Contact::query()->upsertRaw(
+    ['email' => 'a@x.com', 'score' => 0],
+    ['score' => ['score + %d', [5]]]       // bound value: score = score + 5
+);
+```
+
+Unlike `upsert()`, `upsertRaw()` sets exactly the expressions you pass on
+duplicate key — `updated_at` is never auto-bumped, so an atomic counter is not
+clobbered; include `updated_at` yourself if you want to touch it. Expressions are
+developer-authored SQL and hardened against injection; the values you bind are
+always parameterized.
 
 ---
 
