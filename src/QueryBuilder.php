@@ -372,7 +372,7 @@ class QueryBuilder
      *
      * @param array $columns
      *
-     * @return Model|array<int, Model>|false
+     * @return Collection
      */
     public function all($columns = ['*'])
     {
@@ -510,7 +510,7 @@ class QueryBuilder
      *
      * @param array $columns
      *
-     * @return Model|array<int, Model>| false
+     * @return Collection
      */
     public function get($columns = ['*'])
     {
@@ -521,20 +521,17 @@ class QueryBuilder
 
         $this->_method = self::SELECT;
 
-        return $this->_model->getInstanceFromBuilder(
-            $this->exec(),
-            $this->limit == 1 ? true : false
-        );
+        return $this->_model->getInstanceFromBuilder($this->exec());
     }
 
     /**
-     * Returns only first row from query result.
+     * Returns only first row from query result, or null when the query matches nothing.
      *
-     * @return Model
+     * @return null|Model
      */
     public function first()
     {
-        return $this->take(1)->get();
+        return $this->take(1)->get()->first();
     }
 
     /**
@@ -542,7 +539,7 @@ class QueryBuilder
      *
      * @param array $attributes
      *
-     * @return Model|array<int, Model>| false
+     * @return Collection
      */
     public function find($attributes)
     {
@@ -562,7 +559,7 @@ class QueryBuilder
      *
      * @param array $attributes
      *
-     * @return Model | false
+     * @return null|Model
      */
     public function findOne($attributes)
     {
@@ -2599,13 +2596,15 @@ class QueryBuilder
                 $ids[] = $nextID++;
             }
 
+            // get() now always returns a (truthy) Collection, so the re-read has to be counted, not
+            // merely tested, for the bare-id fallback below to stay reachable.
             if (
                 !empty($ids)
-                && (
+                && \count(
                     $allRows = $this->newQuery()
                         ->where($this->_model->getPrimaryKey(), $ids)
                         ->get()
-                )
+                ) > 0
             ) {
                 return $allRows;
             }

@@ -33,6 +33,8 @@ API and runtime behavior change, it is a **major** version bump.
 | 14 | Composer | minimum PHP raised to **8.0** (was 7.4) — package no longer installs on PHP < 8.0 | High |
 | 15 | QueryBuilder | structured identifiers/operators/joins now fail closed | High |
 | 16 | QueryBuilder | typed `rawPrepared()` added; legacy `raw()` deprecated | High |
+| 17 | QueryBuilder | `get()` **always** returns a `Collection` — a `LIMIT 1` read no longer collapses to a bare `Model`, an empty read is an empty `Collection` (was `[]`) and a failed query is too (was `false`) | High |
+| 18 | QueryBuilder | `first()`/`findOne()` return `Model\|null` (was `Model` / `[]` / `false`) | High |
 
 ---
 
@@ -40,9 +42,10 @@ API and runtime behavior change, it is a **major** version bump.
 
 ### 2.1 `Model::get()` / query results return a `Collection`, not an `array`
 
-Multi-row reads now return `BitApps\WPDatabase\Collection` instead of a plain
-PHP array. `find()` always returns a `Collection` (even for a single PK); use
-`findOne()` or `->first()` for a single model. Empty results return `[]`.
+Every read now returns `BitApps\WPDatabase\Collection` instead of a plain PHP
+array. `find()` always returns a `Collection` (even for a single PK); use
+`findOne()` or `->first()` for a single model. A zero-row read and a failed
+query both return an **empty `Collection`**.
 
 ```php
 // Before
@@ -75,11 +78,10 @@ $users->all();        // underlying plain array
 $users->toArray();    // array of model arrays
 ```
 
-> **Silent-data-loss trap:** an `if (is_array($result)) { … }` "got rows?" guard
-> now **inverts** — a non-empty read is a `Collection` (`is_array` → false) while
-> a zero-row read is a real `[]` (`is_array` → true) — so the branch runs only
-> when there is *nothing* to process, silently dropping data whenever rows exist.
-> Replace such guards with `empty($result)` / `!empty($result)`.
+> **`is_array()` guards never fire:** an `if (is_array($result)) { … }` "got
+> rows?" guard is now always false — every read is a `Collection`. Ask
+> `count($result) > 0` instead. `empty()` is **not** a substitute: an empty
+> `Collection` is an object, so it is never `empty()`.
 
 ---
 
@@ -465,6 +467,17 @@ Not signature breaks, but observable runtime differences.
   auto-increment id) both now return the Model instead of `false` — `exec()`
   returns `false` only on a real DB error/cancel. The auto-increment id is still
   assigned to the primary key when present. Genuine errors still return `false`.
+- **Models hydrated into a `Collection` are individually writable.** `__clone()` now
+  drops the inherited query builder, so a row's `save()`/`delete()` builds SQL from
+  *that* row instead of inheriting the parent model's attributes and WHERE clauses.
+  Previously any row from a multi-row read wrote the wrong SQL or fataled; the bug was
+  masked for single-row reads because `get()` returned the parent model itself.
+- **`getDirtyAttributes()` always returns an array.** A model that has tracked nothing
+  yet (a freshly hydrated row) yields `[]` rather than the raw `null` sentinel, so
+  `save()` on an untouched row emits no UPDATE instead of fataling in `array_keys()`.
+  `isDirty()` still distinguishes "untracked" from "tracked".
+- **`paginate()` counts a one-row page correctly** — `current_total` was `0` for
+  `perPage = 1`, because `get()` returned an uncountable `Model` for that page.
 - **`paginate()`** defaults `select` to `*` when empty and computes the count
   before applying limit/offset; pagination with explicit `select` columns and
   count no longer conflict.

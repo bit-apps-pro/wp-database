@@ -171,14 +171,14 @@ raw array/object, not a pre-encoded string.
 
 ```php
 // find() applies WHERE conditions and returns a Collection — not a single Model
-Contact::find(1);                        // by PK → Collection (or [] if none)
+Contact::find(1);                        // by PK → Collection (empty if none)
 Contact::find(['email' => 'a@x.com']);   // by attributes → Collection
 
 // Use findOne() or first() when you want exactly one Model back
-Contact::findOne(['email' => 'a@x.com']); // → single Model or []
-Contact::where('email', 'a@x.com')->first(); // → single Model or []
+Contact::findOne(['email' => 'a@x.com']); // → Model or null
+Contact::where('email', 'a@x.com')->first(); // → Model or null
 
-Contact::first();                        // first row → single Model or []
+Contact::first();                        // first row → Model or null
 Contact::all();                          // all rows → Collection
 Contact::get();                          // all rows → Collection
 Contact::get(['id', 'email']);           // only some columns
@@ -186,12 +186,15 @@ Contact::get(['id', 'email']);           // only some columns
 Contact::where('is_active', 1)->get();   // filtered → Collection
 ```
 
-- `find()` sets WHERE conditions and calls `get()` — it always returns a **`Collection`**
-  (or `[]` when the result is empty, `false` on a database error). It does **not** return a
-  single Model, even when called with a single primary key.
+- `get()` always returns a **`Collection`**, whatever the row count — a `LIMIT 1` read,
+  a zero-row read and a failed query all included (the last two as an empty `Collection`).
+  Callers never branch on the result shape.
+- `find()` sets WHERE conditions and calls `get()`, so it too always returns a `Collection`.
+  It does **not** return a single Model, even when called with a single primary key.
 - For a single-row read use `findOne(['col' => $val])` or chain `->first()` on a builder.
-  Both call `LIMIT 1` internally and return a `Model` on success or `[]` on miss.
-- A query returning multiple rows returns a [`Collection`](#collections).
+  Both apply `LIMIT 1` and return a `Model`, or `null` on a miss.
+- Test for rows with `count($rows) > 0`, not `empty($rows)` — an empty `Collection` is an
+  object, so it is never `empty()`.
 
 ---
 
