@@ -69,6 +69,12 @@ class Blueprint
 
     protected $foreignKeys = [];
 
+    /**
+     * Storage engine for created tables. InnoDB by default because MyISAM silently discards the
+     * FOREIGN KEY clauses this builder emits and supports no transactions; override with engine().
+     */
+    protected $engine = 'InnoDB';
+
     protected $columns = [];
 
     protected $columnIndex = 0;
@@ -196,7 +202,7 @@ class Blueprint
 
             $this->_sql = "CREATE TABLE IF NOT EXISTS {$this->table} (
              {$this->processQueryArr($queryToAdd)}
-             ) {$this->collation}";
+             ) ENGINE={$this->engine} {$this->collation}";
         }
 
         return $this;
@@ -441,6 +447,23 @@ class Blueprint
             $this->uniqueIndex[] = $this->columns[$this->columnIndex]['name'];
         } else {
             $this->uniqueIndex[] = $column;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Override the storage engine used by create(). Only an alphanumeric engine name is accepted,
+     * since the value is interpolated into DDL that cannot be parameterized.
+     *
+     * @param string $engine
+     *
+     * @return $this
+     */
+    public function engine($engine)
+    {
+        if (preg_match('/^[A-Za-z0-9_]+$/', (string) $engine) === 1) {
+            $this->engine = $engine;
         }
 
         return $this;
@@ -764,6 +787,7 @@ class Blueprint
 
         $query = '';
         foreach ($this->foreignKeys as $fkId => $foreignKey) {
+            $query .= " CONSTRAINT `{$this->foreignKeyName($foreignKey['column'])}`";
             $query .= " FOREIGN KEY ({$foreignKey['column']}) REFERENCES {$foreignKey['ref']} ";
             $query .= "({$foreignKey['ref_col']})";
             $query .= (isset($foreignKey['onDelete']) ? " ON DELETE {$foreignKey['onDelete']}" : null);
@@ -773,6 +797,22 @@ class Blueprint
         }
 
         return rtrim($query, ',');
+    }
+
+    /**
+     * Deterministic constraint name for a foreign key, so dropForeign() has a name to target.
+     * Left unnamed, MySQL assigns a positional `<table>_ibfk_N` that shifts whenever another key is
+     * added. Names over MySQL's 64-character identifier limit fall back to a hashed suffix.
+     *
+     * @param string $column
+     *
+     * @return string
+     */
+    private function foreignKeyName($column)
+    {
+        $name = "{$this->table}_{$column}_fk";
+
+        return \strlen($name) <= 64 ? $name : substr($this->table, 0, 27) . '_' . md5($column) . '_fk';
     }
 
     private function isValidType($type)

@@ -203,7 +203,7 @@ Access the relation method name as a property to load it on demand:
 $contact = Contact::query()->findOne(['id' => 1]);
 
 $contact->deals;    // Collection, queried on first access
-$contact->profile;  // single Model or []
+$contact->profile;  // Model or null (oneToOne resolves through first())
 ```
 
 ---

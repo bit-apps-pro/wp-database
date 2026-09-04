@@ -4,15 +4,15 @@ namespace BitApps\WPDatabase\Tests;
 
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use FakeWpdb;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
  * insertOrIgnore() emits INSERT IGNORE while reusing insert()'s value/binding path.
  *
  * @internal
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class InsertOrIgnoreTest extends TestCase
 {
     protected function setUp(): void

@@ -5,6 +5,7 @@ namespace BitApps\WPDatabase\Tests;
 use BitApps\WPDatabase\Tests\Fixtures\TimestampedRow;
 use BitApps\WPDatabase\Tests\Fixtures\User;
 use FakeWpdb;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -12,9 +13,8 @@ use RuntimeException;
  * upsertRaw() applies developer-authored column expressions on duplicate key.
  *
  * @internal
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class UpsertRawTest extends TestCase
 {
     protected function setUp(): void

@@ -227,6 +227,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
         $this->dirty      = null;
         $this->attributes = [];
         $this->_original  = [];
+        // Drop the inherited builder: it is bound to the ORIGINAL model, so a clone that kept it
+        // would write the parent's attributes and where clauses on save()/delete().
+        $this->_queryBuilder = null;
     }
 
     public function fill($attributes, $force = false)
@@ -394,10 +397,16 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return !\is_null($this->dirty);
     }
 
+    /**
+     * The changed, persistable attributes. A model that has tracked nothing yet (dirty === null,
+     * e.g. a row hydrated into a Collection) yields [] — "no changes", never the raw sentinel.
+     *
+     * @return array
+     */
     public function getDirtyAttributes()
     {
         if (!\is_array($this->dirty)) {
-            return $this->dirty;
+            return [];
         }
 
         return array_filter($this->dirty, function ($value) {
@@ -430,26 +439,21 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $this->_original;
     }
 
-    public function getInstanceFromBuilder($result, $setAttribute = false)
+    /**
+     * Hydrates a raw result set into a Collection of models. Always a Collection — an empty one for
+     * both a no-row result and a failed query — so callers never branch on the result shape.
+     *
+     * @param mixed $result
+     *
+     * @return Collection
+     */
+    public function getInstanceFromBuilder($result)
     {
-        if (!\is_array($result)) {
-            return false;
-        }
-
-        if (\count($result) === 0) {
-            return [];
+        if (!\is_array($result) || \count($result) === 0) {
+            return new Collection();
         }
 
         $this->retrieveRelateData($this->getQueryBuilder());
-        if (\count($result) == 1 && $setAttribute) {
-            $this->fill((array) $result[0], true);
-            $this->setExists(true);
-            $this->setRelatedData($this);
-            $this->setExists(true);
-            $this->fireEvent('retrieved');
-
-            return $this;
-        }
 
         return new Collection(
             array_map(
